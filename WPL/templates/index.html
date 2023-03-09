@@ -1,0 +1,47 @@
+{% extends "base.html" %} {% block head %} {{ super() }}
+<link
+        rel="stylesheet"
+        href="{{ url_for('static', filename= 'extended_beauty.css') }}"
+/>
+{% endblock %}
+
+{% block content %}
+<style>
+.flex-container{
+display:flex;
+width: 30%;
+flex-flow:row wrap;
+justify-content: space-around;
+}
+
+.flex-item{
+flex: 0 0 50px;
+margin: 5px;
+padding-bottom: 15px;
+}
+</style>
+
+<center>
+    <div style="background-image: url('/static/images/banner_bg.jpg'); background-size: cover;
+            background-attachment: fixed;">
+<marquee style="color: white" width="50%" direction="left" height="50px" scrollamount="12">
+        <h1>Welcome to TATA WPL 2023 Info Tab</h1>
+    </marquee>
+    <div>
+    <img src="{{ url_for('static', filename= 'images/WPL logo 2.jpg') }}"
+         alt="pushup guy"
+         height="250px"
+    >
+    </div>
+    <h3 style="font-size:25px; color: white;"><br>**** TATA WPL 2023 Teams ****</h3>
+    <div>
+    <div class="flex-container">
+        {% for i in teams[:-1] %}
+        <div class="flex-item">
+    <img src="/static/images/{{ i }}.png" height="100px" width="100px">
+        </div>
+        {% endfor %}
+    </div>
+    </div></div>
+</center>
+{% endblock %}

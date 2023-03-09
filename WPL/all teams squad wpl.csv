@@ -1,0 +1,88 @@
+Player_ID,Name,Team,Captain,Keeper,Overseas,Role,Batting Style,Bowling Style,Nationality,DOB
+1,Jasia Akhter,DCW,N,N,N,Batter,Right Handed,Right-arm medium,Indian,1988-05-27
+2,Jemimah Rodrigues,DCW,N,N,N,Batter,Right Handed,Off break,Indian,2000-09-05
+3,Laura Harris,DCW,N,N,Y,Batter,Right Handed,Right-arm medium,Australian,1990-08-06
+4,Meg Lanning,DCW,Y,N,Y,Batter,Right Handed,Right-arm medium,Australian,1992-03-25
+5,Shafali Verma,DCW,N,N,N,Batter,Right Handed,Off break,Indian,2004-01-28
+6,Sneha Deepthi,DCW,N,N,N,Batter,Right Handed,Off break,Indian,1996-09-10
+7,Alice Capsey,DCW,N,N,Y,All Rounder,Right Handed,Off break,England,2004-08-11
+8,Arundhati Reddy,DCW,N,N,N,All Rounder,Right Handed,Right-arm medium fast,Indian,1997-04-10
+9,Jess Jonassen,DCW,N,N,Y,All Rounder,Left Handed,Slow left-arm orthodox,Australian,1992-11-05
+10,Marizanne Kapp,DCW,N,N,Y,All Rounder,Right Handed,Right-arm medium,South African,1990-01-04
+11,Minnu Mani,DCW,N,N,N,All Rounder,Left Handed,Off break,Indian,1999-03-24
+12,Radha Yadav,DCW,N,N,N,All Rounder,Right Handed,Slow left-arm orthodox,Indian,2000-04-21
+13,Shikha Pandey,DCW,N,N,N,All Rounder,Right Handed,Right-arm medium,Indian,1989-05-12
+14,Aparna Mondal,DCW,N,N,N,Wicket Keeper,Right Handed,,Indian,1996-02-06
+15,Taniyaa Bhatia,DCW,N,Y,N,Wicket Keeper,Right Handed,,Indian,1997-11-28
+16,Poonam Yadav,DCW,N,N,N,Bowler,Right Handed,Leg break googly,Indian,1991-08-24
+17,Tara Norris,DCW,N,N,Y,Bowler,Left Handed,Left-arm medium,United States,1998-06-04
+18,Titas Sadhu,DCW,N,N,N,Bowler,Right Handed,Right-arm medium fast,Indian,2004-09-29
+1,Sabbineni Meghana,GG,N,N,N,Batter,Right Handed,Right-arm medium,Indian,1996-06-07
+2,Sophia Dunkley,GG,N,N,Y,Batter,Right Handed,Leg break,England,1998-07-16
+3,Annabel Sutherland,GG,N,N,Y,All Rounder,Right Handed,Right-arm medium fast,Australian,2001-10-12
+4,Ashleigh Gardner,GG,N,N,Y,All Rounder,Right Handed,Off break,Australian,1997-04-15
+5,Ashwani Kumari,GG,N,N,N,All Rounder,Right Handed,Right-arm medium,Indian,1997-08-25
+6,Dayalan Hemalatha,GG,N,N,N,All Rounder,Right Handed,Off break,Indian,1994-09-29
+7,Georgia Wareham,GG,N,N,Y,All Rounder,Right Handed,Leg break,Australian,1999-05-26
+8,Harleen Deol,GG,N,N,N,All Rounder,Right Handed,Leg spin,Indian,1998-06-21
+9,Hurley Gala,GG,N,N,N,All Rounder,Right Handed,Right-arm medium fast,Indian,2006-09-19
+10,Kim Garth,GG,N,N,Y,All Rounder,Right Handed,Right-arm medium fast,Ireland,1996-04-25
+11,Mansi Joshi,GG,N,N,N,All Rounder,Right Handed,Right-arm medium fast,Indian,1993-08-18
+12,Sneh Rana,GG,N,N,N,All Rounder,Right Handed,Off break,Indian,1994-02-18
+13,Tanuja Kanwer,GG,N,N,N,All Rounder,Left Handed,Slow left-arm orthodox,Indian,1996-01-28
+14,Beth Mooney,GG,Y,Y,Y,Wicket Keeper,Left Handed,,Australian,1994-01-14
+15,Sushma Verma,GG,N,N,N,Wicket Keeper,Right Handed,Off Spin,Indian,1992-11-03
+16,Monica Patel,GG,N,N,N,Bowler,Left Handed,Left-arm medium,Indian,1999-04-26
+17,Parunika Sisodia,GG,N,N,N,Bowler,Right Handed,Slow left-arm orthodox,Indian,2005-09-01
+18,Shabnam Shakil,GG,N,N,N,Bowler,Right Handed,Right-arm medium,Indian,2007-06-17
+1,Dhara Gujjar,MIW,N,N,N,Batter,Left Handed,Off Spin,Indian,2002-08-18
+2,Amanjot Kaur,MIW,N,N,N,All Rounder,Right Handed,Right-arm fast medium,Indian,2000-08-25
+3,Amelia Kerr,MIW,N,N,Y,All Rounder,Right Handed,Leg break,New Zealander,2000-10-13
+4,Chloe Tryon,MIW,N,N,Y,All Rounder,Right Handed,Slow left-arm orthodox,South African,1994-01-25
+5,Harmanpreet Kaur,MIW,Y,N,N,All Rounder,Right Handed,Off break,Indian,1989-03-08
+6,Hayley Matthews,MIW,N,N,Y,All Rounder,Right Handed,Off break,West Indian,1998-03-19
+7,Heather Graham,MIW,N,N,Y,All Rounder,Right Handed,Right-arm medium,Australian,1996-05-10
+8,Humairaa Kaazi,MIW,N,N,N,All Rounder,Right Handed,Right-arm medium,Indian,1993-10-05
+9,Isabelle Wong,MIW,N,N,Y,All Rounder,Right Handed,Right-arm fast medium,England,2002-05-15
+10,Jintimani Kalita,MIW,N,N,N,All Rounder,Left Handed,Right-arm medium,Indian,2003-12-25
+11,Natalie Sciver,MIW,N,N,Y,All Rounder,Right Handed,Right-arm medium,England,1992-08-20
+12,Neelam Bisht,MIW,N,N,N,All Rounder,Right Handed,Leg spin,Indian,2023-03-07
+13,Pooja Vastrakar,MIW,N,N,N,All Rounder,Right Handed,Right-arm medium fast,Indian,1999-09-25
+14,Priyanka Bala,MIW,N,N,N,Wicket Keeper,Right Handed,Right-arm medium fast,Indian,1995-09-30
+15,Yastika Bhatia,MIW,N,Y,N,Wicket Keeper,Left Handed,Slow left-arm orthodox,Indian,2000-11-01
+16,Saika Ishaque,MIW,N,N,N,Bowler,Left Handed,Slow left-arm orthodox,Indian,1995-10-08
+17,Sonam Yadav,MIW,N,N,N,Bowler,Right Handed,Slow left-arm orthodox,Indian,2007-07-18
+1,Disha Kasat,RCBW,N,N,N,Batter,Right Handed,Off Spin,Indian,1997-09-19
+2,Smriti Mandhana,RCBW,Y,N,N,Batter,Left Handed,Off break,Indian,1996-07-18
+3,Asha Shobana,RCBW,N,N,N,All Rounder,Right Handed,Leg break,Indian,1991-03-16
+4,Dane Van Niekerk,RCBW,N,N,Y,All Rounder,Right Handed,Leg break,South African,1993-05-14
+5,Ellyse Perry,RCBW,N,N,Y,All Rounder,Right Handed,Right-arm fast medium,Australian,1990-11-03
+6,Erin Burns,RCBW,N,N,Y,All Rounder,Right Handed,Off break,Australian,1988-06-22
+7,Heather Knight,RCBW,N,N,Y,All Rounder,Right Handed,Off break,England,1990-12-26
+8,Kanika Ahuja,RCBW,N,N,N,All Rounder,Left Handed,Off break,Indian,2002-08-07
+9,Poonam Khemnar,RCBW,N,N,N,All Rounder,Right Handed,Leg break,Indian,1994-05-09
+10,Shreyanka Patil,RCBW,N,N,N,All Rounder,Right Handed,Off break,Indian,2002-07-31
+11,Sophie Devine,RCBW,N,N,Y,All Rounder,Right-arm medium,Right-arm medium,New Zealander,1989-09-01
+12,Indrani Roy,RCBW,N,N,N,Wicket Keeper,Right Handed,Right-arm medium fast,Indian,1997-09-05
+13,Richa Ghosh,RCBW,N,Y,N,Wicket Keeper,Right Handed,Right-arm medium,Indian,2003-09-28
+14,Komal Zanzad,RCBW,N,N,N,Bowler,Right Handed,Left-arm medium fast,Indian,1991-10-07
+15,Megan Schutt,RCBW,N,N,Y,Bowler,Right Handed,Right-arm medium fast,Australian,1993-01-15
+16,Preeti Bose,RCBW,N,N,N,Bowler,Right Handed,Slow left-arm orthodox,Indian,1992-04-20
+17,Renuka Singh,RCBW,N,N,N,Bowler,Right Handed,Right-arm fast medium,Indian,1996-01-02
+18,Sahana Pawar,RCBW,N,N,N,Bowler,Right Handed,Slow left-arm orthodox,Indian,1996-11-20
+1,Kiran Navgire,UPW,N,N,N,Batter,Right Handed,Off break,Indian,1994-09-18
+2,Shweta Sehrawat,UPW,N,N,N,Batter,Right Handed,Off Spin,Indian,2004-02-26
+3,Simran Shaikh,UPW,N,N,N,Batter,Right Handed,,Indian,2002-01-12
+4,Deepti Sharma,UPW,N,N,N,All Rounder,Left Handed,Off break,Indian,1997-08-24
+5,Devika Vaidya,UPW,N,N,N,All Rounder,Left Handed,Leg break googly,Indian,1997-08-13
+6,Grace Harris,UPW,N,N,Y,All Rounder,Right Handed,Off break,Australian,1993-09-18
+7,Parshavi Chopra,UPW,N,N,N,All Rounder,Right Handed,Leg spin,Indian,2006-05-10
+8,S Yashasri,UPW,N,N,N,All Rounder,Right Handed,Right-arm medium,Indian,2003-09-04
+9,Sophie Ecclestone,UPW,N,N,Y,All Rounder,Right Handed,Slow left-arm orthodox,England,1999-05-06
+10,Tahlia Mcgrath,UPW,N,N,Y,All Rounder,Right Handed,Right-arm medium fast,Australian,1995-11-10
+11,Alyssa Healy,UPW,Y,Y,Y,Wicket Keeper,Right Handed,,Australian,1990-03-24
+12,Laxmi Yadav,UPW,N,N,N,Wicket Keeper,Right Handed,Right-arm medium,Indian,1997-10-22
+13,Anjali Sarvani,UPW,N,N,N,Bowler,Left Handed,Left-arm medium fast,Indian,1997-08-28
+14,Lauren Bell,UPW,N,N,Y,Bowler,Right Handed,Right-arm fast medium,England,2001-01-02
+15,Rajeshwari Gayakwad,UPW,N,N,N,Bowler,Right Handed,Slow left-arm orthodox,Indian,1991-06-01
+16,Shabnim Ismail,UPW,N,N,Y,Bowler,Left Handed,Right-arm fast medium,South African,1988-10-01
