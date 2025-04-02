@@ -1,47 +1,61 @@
 import tkinter as tk
 from tkinter import ttk
 import wmi
-import subprocess
 import plotly.graph_objects as go
+import socket
 
-# Function to get system information using WMI
+# Function to get system information using WMI (for remote server)
 def get_system_info(remote_server, username, password):
     try:
-        # Initialize WMI connection
         c = wmi.WMI(remote_server, user=username, password=password)
 
         # Get system info
         system_info = c.Win32_OperatingSystem()[0]
         cpu_info = c.Win32_Processor()[0]
-        ip_address = subprocess.check_output("hostname -I", shell=True).decode().strip()
-
-        total_ram = float(system_info.TotalVisibleMemorySize) / 1024 / 1024  # Convert to GB
+        ip_address = socket.gethostbyname(remote_server)  # Getting IP of remote server using socket
+        total_ram = float(system_info.TotalVisibleMemorySize) / (1024 * 1024)  # Convert KB to GB
         hostname = system_info.CSName
         os_name = system_info.Caption
-        cpu_cores = c.Win32_Processor()[0].NumberOfCores
+        cpu_cores = cpu_info.NumberOfCores
 
         return hostname, ip_address, cpu_info.Name, os_name, total_ram, cpu_cores
     except Exception as e:
         print(f"Error fetching system info: {e}")
         return None, None, None, None, None, None
 
-# Function to get CPU usage and RAM usage using WMI
+# Function to get CPU and RAM usage using WMI (for remote server)
 def get_usage(remote_server, username, password):
     try:
         c = wmi.WMI(remote_server, user=username, password=password)
 
-        # CPU usage
+        # Get CPU usage
         cpu_usage = c.Win32_Processor()[0].LoadPercentage
 
-        # RAM usage
+        # Get RAM usage
         total_memory = float(c.Win32_ComputerSystem()[0].TotalPhysicalMemory) / (1024 * 1024 * 1024)  # GB
         available_memory = float(c.Win32_OperatingSystem()[0].FreePhysicalMemory) / 1024  # MB
-        ram_usage = 100 * (1 - (available_memory / total_memory))  # Calculate RAM usage percentage
+        ram_usage = 100 * (1 - (available_memory / (total_memory * 1024)))  # Calculate RAM usage percentage
 
         return cpu_usage, ram_usage
     except Exception as e:
         print(f"Error fetching CPU/RAM usage: {e}")
         return None, None
+
+# Function to get disk usage using WMI for remote server
+def get_disk_usage(remote_server, username, password, drive_letter="C:"):
+    try:
+        c = wmi.WMI(remote_server, user=username, password=password)
+        for disk in c.Win32_LogicalDisk(DriveType=3):  # DriveType=3 means Local Disk
+            if disk.DeviceID == drive_letter:
+                total_size = float(disk.Size) / (1024 * 1024 * 1024)  # Convert to GB
+                free_space = float(disk.FreeSpace) / (1024 * 1024 * 1024)  # Convert to GB
+                used_space = total_size - free_space
+                usage_percent = (used_space / total_size) * 100
+
+                return usage_percent, used_space, free_space, total_size
+    except Exception as e:
+        print(f"Error fetching disk info: {e}")
+        return None, None, None, None
 
 # Function to create gauge charts using Plotly
 def create_gauge(title, value, color, max_value=100, unit="%"):
@@ -86,27 +100,12 @@ def update_dashboard(remote_server, username, password):
     # Create Gauges for CPU, RAM, and Disk Usage
     cpu_fig = create_gauge("CPU Usage", cpu_usage, "blue")
     ram_fig = create_gauge("RAM Usage", ram_usage, "green")
-    disk_fig = create_gauge("Disk Usage", c_usage if c_usage else disk_usage, "red")
+    disk_fig = create_gauge("Disk Usage", c_usage if c_usage else 0, "red")
 
     # Display Gauges
     cpu_fig.show()
     ram_fig.show()
     disk_fig.show()
-
-# Function to get disk usage using WMI for remote server
-def get_disk_usage(remote_server, username, password, drive_letter):
-    try:
-        c = wmi.WMI(remote_server, user=username, password=password)
-        for disk in c.Win32_LogicalDisk(DriveType=3):  # DriveType=3 means Local Disk
-            if disk.DeviceID == drive_letter:
-                total_size = float(disk.Size) / (1024 * 1024 * 1024)  # Convert to GB
-                free_space = float(disk.FreeSpace) / (1024 * 1024 * 1024)  # Convert to GB
-                used_space = total_size - free_space
-                usage_percent = (used_space / total_size) * 100
-                return usage_percent, used_space, free_space, total_size
-    except Exception as e:
-        print(f"Error fetching disk info: {e}")
-        return None, None, None, None
 
 # Create the Tkinter main window
 root = tk.Tk()
