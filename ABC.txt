@@ -1,1 +1,9 @@
-Test1
+
+I have requirements of creating a health check dashboard using python tkinter to monitor some 10 windows servers performance metrics like Ping, RDP connection status, C: and D: drive usage, Uptime.
+
+Here my dashboard View should be like, left side there should be a panel with dropdown list of windows servers, when I click on any server, in remaining part of the dashboard, that particular server metrics should be displayed as below
+1) Ping status : True - Green/ False - Red
+2) RDP connection : True - Green/ False - Red
+3) C: drive : speedo meter view with disk usage design
+4) D: drive : speedo meter view with disk usage design
+5) Uptime: Number of days server is up
