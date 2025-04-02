@@ -86,10 +86,12 @@ def update_metrics(remote_server, username, password):
 # Function to draw the speedometer with updated color scheme
 def draw_speedometer(usage_percent, total_size, used_space, free_space, ax):
     ax.clear()
-    ax.set_title("Disk Usage")
-    ax.set_xlim(0, 100)
-    ax.set_ylim(0, 1)
-    ax.set_theta_direction(-1)
+
+    # Set the plot to polar coordinates
+    ax = plt.subplot(111, polar=True)
+
+    # Define the angle for the speedometer
+    angle = 2 * 3.14159 * (usage_percent / 100)
     
     # Define color for used space based on usage
     if usage_percent > 95:
@@ -97,12 +99,11 @@ def draw_speedometer(usage_percent, total_size, used_space, free_space, ax):
     else:
         used_color = 'green'  # Green for lower usage
     
-    # Draw the free space (gray)
+    # Create the full circle for free space (gray color)
     ax.barh(0, 1, left=0, height=0.2, color='gray', alpha=0.5)
     
     # Draw the used space (green or red)
-    theta = 2 * 3.14159 * (usage_percent / 100)
-    ax.barh(0, 1, left=0, height=0.2, color=used_color, alpha=0.7, theta=theta)
+    ax.barh(0, 1, left=0, height=0.2, color=used_color, alpha=0.7, theta=angle)
     
     # Add the legend and GB data
     ax.text(50, 0.25, f"Used: {used_space:.2f} GB ({usage_percent:.1f}%)", horizontalalignment='center', verticalalignment='center', fontweight='bold')
