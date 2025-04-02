@@ -1,0 +1,136 @@
+import tkinter as tk
+from tkinter import ttk
+import psutil
+import subprocess
+import time
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+# Function to check the server ping
+def check_ping(server):
+    try:
+        response = subprocess.run(['ping', '-n', '1', server], stdout=subprocess.PIPE)
+        if response.returncode == 0:
+            return True
+        else:
+            return False
+    except Exception as e:
+        print(f"Error pinging server: {e}")
+        return False
+
+# Function to check if RDP connection is available
+def check_rdp(server):
+    try:
+        response = subprocess.run(['telnet', server, '3389'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if response.returncode == 0:
+            return True
+        else:
+            return False
+    except Exception as e:
+        print(f"Error checking RDP: {e}")
+        return False
+
+# Function to get disk usage
+def get_disk_usage(drive):
+    try:
+        usage = psutil.disk_usage(drive)
+        return usage.percent
+    except Exception as e:
+        print(f"Error getting disk usage: {e}")
+        return 0
+
+# Function to get server uptime in days
+def get_uptime(server):
+    try:
+        uptime_seconds = time.time() - psutil.boot_time()
+        uptime_days = uptime_seconds // (24 * 3600)
+        return uptime_days
+    except Exception as e:
+        print(f"Error getting uptime: {e}")
+        return 0
+
+# Function to update server metrics
+def update_metrics(server):
+    # Update Ping status
+    ping_status = check_ping(server)
+    ping_label.config(text=f"Ping: {'True' if ping_status else 'False'}", fg="green" if ping_status else "red")
+    
+    # Update RDP connection status
+    rdp_status = check_rdp(server)
+    rdp_label.config(text=f"RDP Connection: {'True' if rdp_status else 'False'}", fg="green" if rdp_status else "red")
+    
+    # Update C: and D: drive usage
+    c_drive_usage = get_disk_usage('C:')
+    d_drive_usage = get_disk_usage('D:')
+    
+    # Plot C: drive speedometer
+    draw_speedometer(c_drive_usage, ax_c)
+    
+    # Plot D: drive speedometer
+    draw_speedometer(d_drive_usage, ax_d)
+    
+    # Update Uptime
+    uptime = get_uptime(server)
+    uptime_label.config(text=f"Uptime: {uptime} days")
+
+# Function to draw the speedometer
+def draw_speedometer(usage_percent, ax):
+    ax.clear()
+    ax.set_title("Disk Usage")
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 1)
+    ax.set_theta_direction(-1)
+    
+    theta = 2 * 3.14159 * (usage_percent / 100)
+    ax.barh(0, 1, left=0, height=0.2, color='gray', alpha=0.5)
+    ax.barh(0, 1, left=0, height=0.2, color='green' if usage_percent < 80 else 'red', alpha=0.7, theta=theta)
+    
+    canvas.draw()
+
+# Creating the main window
+root = tk.Tk()
+root.title("Server Health Check Dashboard")
+
+# Server selection dropdown
+server_list = ['Server1', 'Server2', 'Server3', 'Server4', 'Server5']  # Replace with actual server names
+server_var = tk.StringVar(value=server_list[0])
+
+dropdown_label = tk.Label(root, text="Select Server")
+dropdown_label.grid(row=0, column=0, padx=10, pady=10)
+
+server_dropdown = ttk.Combobox(root, textvariable=server_var, values=server_list)
+server_dropdown.grid(row=0, column=1, padx=10, pady=10)
+
+# Buttons to update metrics
+update_button = tk.Button(root, text="Update Metrics", command=lambda: update_metrics(server_var.get()))
+update_button.grid(row=1, column=0, columnspan=2, pady=20)
+
+# Display metrics
+ping_label = tk.Label(root, text="Ping: Pending", font=('Arial', 12))
+ping_label.grid(row=2, column=0, columnspan=2, pady=5)
+
+rdp_label = tk.Label(root, text="RDP Connection: Pending", font=('Arial', 12))
+rdp_label.grid(row=3, column=0, columnspan=2, pady=5)
+
+uptime_label = tk.Label(root, text="Uptime: Pending", font=('Arial', 12))
+uptime_label.grid(row=4, column=0, columnspan=2, pady=5)
+
+# Set up matplotlib figure for speedometers
+fig, (ax_c, ax_d) = plt.subplots(1, 2, figsize=(10, 4))
+
+# C: drive usage
+ax_c.set_title("C: Drive")
+ax_c.set_xlim(0, 100)
+ax_c.set_ylim(0, 1)
+
+# D: drive usage
+ax_d.set_title("D: Drive")
+ax_d.set_xlim(0, 100)
+ax_d.set_ylim(0, 1)
+
+# Canvas to embed matplotlib plot
+canvas = FigureCanvasTkAgg(fig, master=root)
+canvas.get_tk_widget().grid(row=5, column=0, columnspan=2)
+
+# Start the Tkinter event loop
+root.mainloop()
