@@ -1,134 +1,108 @@
 import tkinter as tk
+from ttkbootstrap import Style
 from tkinter import ttk
-import wmi
-import plotly.graph_objects as go
-import socket
+import psutil
+from ping3 import ping
+import time
+from speedometer import Speedometer
 
-# Function to get system information using WMI (for remote server)
-def get_system_info(remote_server, username, password):
+# Function to check Ping Status
+def check_ping(server_ip):
+    response = ping(server_ip)
+    return response is not None
+
+# Function to check RDP status (this is a simplified example, you might need a more complex solution for real RDP checks)
+def check_rdp(server_ip):
+    # Assume RDP is running on port 3389
     try:
-        c = wmi.WMI(remote_server, user=username, password=password)
+        with socket.create_connection((server_ip, 3389), timeout=5):
+            return True
+    except:
+        return False
 
-        # Get system info
-        system_info = c.Win32_OperatingSystem()[0]
-        cpu_info = c.Win32_Processor()[0]
-        ip_address = socket.gethostbyname(remote_server)  # Getting IP of remote server using socket
-        total_ram = float(system_info.TotalVisibleMemorySize) / (1024 * 1024)  # Convert KB to GB
-        hostname = system_info.CSName
-        os_name = system_info.Caption
-        cpu_cores = cpu_info.NumberOfCores
-
-        return hostname, ip_address, cpu_info.Name, os_name, total_ram, cpu_cores
-    except Exception as e:
-        print(f"Error fetching system info: {e}")
-        return None, None, None, None, None, None
-
-# Function to get CPU and RAM usage using WMI (for remote server)
-def get_usage(remote_server, username, password):
-    try:
-        c = wmi.WMI(remote_server, user=username, password=password)
-
-        # Get CPU usage
-        cpu_usage = c.Win32_Processor()[0].LoadPercentage
-
-        # Get RAM usage
-        total_memory = float(c.Win32_ComputerSystem()[0].TotalPhysicalMemory) / (1024 * 1024 * 1024)  # GB
-        available_memory = float(c.Win32_OperatingSystem()[0].FreePhysicalMemory) / 1024  # MB
-        ram_usage = 100 * (1 - (available_memory / (total_memory * 1024)))  # Calculate RAM usage percentage
-
-        return cpu_usage, ram_usage
-    except Exception as e:
-        print(f"Error fetching CPU/RAM usage: {e}")
-        return None, None
-
-# Function to get disk usage using WMI for remote server
-def get_disk_usage(remote_server, username, password, drive_letter="C:"):
-    try:
-        c = wmi.WMI(remote_server, user=username, password=password)
-        for disk in c.Win32_LogicalDisk(DriveType=3):  # DriveType=3 means Local Disk
-            if disk.DeviceID == drive_letter:
-                total_size = float(disk.Size) / (1024 * 1024 * 1024)  # Convert to GB
-                free_space = float(disk.FreeSpace) / (1024 * 1024 * 1024)  # Convert to GB
-                used_space = total_size - free_space
-                usage_percent = (used_space / total_size) * 100
-
-                return usage_percent, used_space, free_space, total_size
-    except Exception as e:
-        print(f"Error fetching disk info: {e}")
-        return None, None, None, None
-
-# Function to create gauge charts using Plotly
-def create_gauge(title, value, color, max_value=100, unit="%"):
-    return go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=value,
-        title={"text": title},
-        gauge={
-            "axis": {"range": [0, max_value]},
-            "bar": {"color": color},
-            "steps": [
-                {"range": [0, max_value * 0.6], "color": "lightgreen"},
-                {"range": [max_value * 0.6, max_value * 0.85], "color": "yellow"},
-                {"range": [max_value * 0.85, max_value], "color": "red"},
-            ],
-        }
-    ))
-
-# Function to update the dashboard UI
-def update_dashboard(remote_server, username, password):
-    # Fetch system information
-    hostname, ip_address, cpu_info, os_name, total_ram, cpu_cores = get_system_info(remote_server, username, password)
-
-    # Fetch CPU and RAM usage
-    cpu_usage, ram_usage = get_usage(remote_server, username, password)
+# Function to update server metrics
+def update_metrics():
+    server_ip = server_combobox.get()
     
-    # Fetch disk usage for C: drive (remote)
-    c_usage, c_used, c_free, c_total = get_disk_usage(remote_server, username, password, "C:")
+    ping_status = check_ping(server_ip)
+    rdp_status = check_rdp(server_ip)
+    
+    ping_label.config(text="Ping Status: " + ("True" if ping_status else "False"), 
+                      foreground="green" if ping_status else "red")
+    
+    rdp_label.config(text="RDP Connection: " + ("True" if rdp_status else "False"), 
+                     foreground="green" if rdp_status else "red")
+    
+    # Get CPU and memory usage
+    cpu_usage = psutil.cpu_percent(interval=1)
+    memory_info = psutil.virtual_memory()
+    
+    cpu_usage_label.config(text=f"CPU Usage: {cpu_usage}%")
+    memory_usage_label.config(text=f"Memory Usage: {memory_info.percent}%")
+    
+    # Get disk usage (C: and D:)
+    c_drive_usage = psutil.disk_usage("C:").percent
+    d_drive_usage = psutil.disk_usage("D:").percent
+    
+    # Update speedometer views
+    c_drive_speedometer.set_value(c_drive_usage)
+    d_drive_speedometer.set_value(d_drive_usage)
+    
+    # Get uptime in days
+    uptime_seconds = time.time() - psutil.boot_time()
+    uptime_days = uptime_seconds // (24 * 3600)
+    uptime_label.config(text=f"Uptime: {int(uptime_days)} days")
+    
+    # System Information (similar to image you provided)
+    sys_info_label.config(text=f"System Information\nCPU: {psutil.cpu_count(logical=True)} cores\n"
+                              f"RAM: {psutil.virtual_memory().total // (1024 ** 3)} GB\n"
+                              f"OS: {psutil.os.name}")
 
-    # Clear the previous UI content
-    for widget in info_frame.winfo_children():
-        widget.destroy()
+# GUI Setup
+style = Style(theme="superhero")
+root = style.master
+root.title("Windows Server Health Check Dashboard")
 
-    # Display system information
-    ttk.Label(info_frame, text="Hostname: " + hostname, font=("Arial", 12, "bold")).pack(anchor="w")
-    ttk.Label(info_frame, text="IP Address: " + ip_address).pack(anchor="w")
-    ttk.Label(info_frame, text="CPU: " + cpu_info).pack(anchor="w")
-    ttk.Label(info_frame, text=f"Total RAM: {total_ram:.2f} GB").pack(anchor="w")
-    ttk.Label(info_frame, text=f"CPU Cores: {cpu_cores}").pack(anchor="w")
-    ttk.Label(info_frame, text=f"OS: {os_name}").pack(anchor="w")
+# Left Panel: Server Dropdown
+frame_left = ttk.Frame(root, width=200, padding=10)
+frame_left.grid(row=0, column=0, sticky="nsew")
 
-    # Create Gauges for CPU, RAM, and Disk Usage
-    cpu_fig = create_gauge("CPU Usage", cpu_usage, "blue")
-    ram_fig = create_gauge("RAM Usage", ram_usage, "green")
-    disk_fig = create_gauge("Disk Usage", c_usage if c_usage else 0, "red")
-
-    # Display Gauges
-    cpu_fig.show()
-    ram_fig.show()
-    disk_fig.show()
-
-# Create the Tkinter main window
-root = tk.Tk()
-root.title("Server Health Monitoring Dashboard")
-root.geometry("800x500")
-
-# Create Layout Frames
-info_frame = ttk.Frame(root, padding=10)
-info_frame.pack(side="left", fill="y")
-
-gauge_frame = ttk.Frame(root, padding=10)
-gauge_frame.pack(side="right", expand=True, fill="both")
-
-# Server Dropdown List
-server_list = ["192.168.1.100", "192.168.1.101", "192.168.1.102"]  # Add actual server names or IP addresses
-server_var = tk.StringVar()
-server_dropdown = ttk.Combobox(info_frame, textvariable=server_var, values=server_list)
-server_dropdown.pack(pady=10)
-server_dropdown.current(0)
+server_list = ["192.168.1.101", "192.168.1.102", "192.168.1.103"]  # Replace with actual server IPs
+server_combobox = ttk.Combobox(frame_left, values=server_list, state="readonly")
+server_combobox.grid(row=0, column=0, pady=10)
+server_combobox.set(server_list[0])
 
 # Update Button
-update_button = ttk.Button(info_frame, text="Update Metrics", command=lambda: update_dashboard(server_var.get(), "admin", "password"))
-update_button.pack(pady=10)
+update_button = ttk.Button(frame_left, text="Update", command=update_metrics)
+update_button.grid(row=1, column=0, pady=10)
 
-# Run the Tkinter Main Loop
+# Right Panel: Server Metrics Display
+frame_right = ttk.Frame(root, padding=10)
+frame_right.grid(row=0, column=1, sticky="nsew")
+
+ping_label = ttk.Label(frame_right, text="Ping Status: ", font=("Arial", 12))
+ping_label.grid(row=0, column=0, sticky="w")
+
+rdp_label = ttk.Label(frame_right, text="RDP Connection: ", font=("Arial", 12))
+rdp_label.grid(row=1, column=0, sticky="w")
+
+cpu_usage_label = ttk.Label(frame_right, text="CPU Usage: ", font=("Arial", 12))
+cpu_usage_label.grid(row=2, column=0, sticky="w")
+
+memory_usage_label = ttk.Label(frame_right, text="Memory Usage: ", font=("Arial", 12))
+memory_usage_label.grid(row=3, column=0, sticky="w")
+
+uptime_label = ttk.Label(frame_right, text="Uptime: ", font=("Arial", 12))
+uptime_label.grid(row=4, column=0, sticky="w")
+
+sys_info_label = ttk.Label(frame_right, text="System Info", font=("Arial", 12))
+sys_info_label.grid(row=5, column=0, sticky="w")
+
+# Speedometers for C: and D: drives
+c_drive_speedometer = Speedometer(frame_right, width=150, height=150)
+c_drive_speedometer.grid(row=6, column=0, padx=20)
+d_drive_speedometer = Speedometer(frame_right, width=150, height=150)
+d_drive_speedometer.grid(row=6, column=1, padx=20)
+
+# Run the GUI loop
 root.mainloop()
