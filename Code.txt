@@ -1,9 +1,7 @@
+import plotly.graph_objects as go
 import tkinter as tk
 from tkinter import ttk
 import subprocess
-import time
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import wmi
 
 # Function to check the server ping
@@ -83,37 +81,37 @@ def update_metrics(remote_server, username, password):
     uptime = get_uptime(remote_server, username, password)
     uptime_label.config(text=f"Uptime: {uptime} days")
 
-# Function to draw the speedometer with updated color scheme
+# Function to draw the speedometer using Plotly
 def draw_speedometer(usage_percent, total_size, used_space, free_space, ax):
-    ax.clear()
-
-    # Set the plot to polar coordinates
-    ax = plt.subplot(111, polar=True)
-
-    # Define the angle for the speedometer
-    angle = 2 * 3.14159 * (usage_percent / 100)
-    
     # Define color for used space based on usage
     if usage_percent > 95:
         used_color = 'red'  # Red for high usage
     else:
         used_color = 'green'  # Green for lower usage
-    
-    # Create the full circle for free space (gray color)
-    ax.barh(0, 1, left=0, height=0.2, color='gray', alpha=0.5)
-    
-    # Draw the used space (green or red)
-    ax.barh(0, 1, left=0, height=0.2, color=used_color, alpha=0.7, theta=angle)
-    
-    # Add the legend and GB data
-    ax.text(50, 0.25, f"Used: {used_space:.2f} GB ({usage_percent:.1f}%)", horizontalalignment='center', verticalalignment='center', fontweight='bold')
-    ax.text(50, 0.15, f"Free: {free_space:.2f} GB ({100 - usage_percent:.1f}%)", horizontalalignment='center', verticalalignment='center', fontweight='bold')
 
-    # Display range in GB below the gauge
-    ax.set_xticks([0, 100])
-    ax.set_xticklabels([f"0 GB", f"{total_size:.2f} GB"])
-    
-    canvas.draw()
+    # Create a gauge chart using Plotly
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=usage_percent,
+        title={'text': f"Disk Usage ({usage_percent:.1f}%)"},
+        domain={'x': [0, 1], 'y': [0, 1]},
+        gauge={'axis': {'range': [None, 100]},
+               'bar': {'color': used_color},
+               'steps': [
+                   {'range': [0, 95], 'color': 'green'},
+                   {'range': [95, 100], 'color': 'red'}
+               ]}
+    ))
+
+    # Update the layout for the plot
+    fig.update_layout(
+        margin={'t': 50, 'b': 50, 'l': 50, 'r': 50},
+        title=f"C: Drive Usage - {used_space:.2f} GB used",
+        font={'size': 14},
+    )
+
+    # Render the figure in the Tkinter Canvas
+    fig.show()
 
 # Creating the main window
 root = tk.Tk()
@@ -146,23 +144,6 @@ rdp_label.grid(row=3, column=0, columnspan=2, pady=5)
 
 uptime_label = tk.Label(root, text="Uptime: Pending", font=('Arial', 12))
 uptime_label.grid(row=4, column=0, columnspan=2, pady=5)
-
-# Set up matplotlib figure for speedometers
-fig, (ax_c, ax_d) = plt.subplots(1, 2, figsize=(10, 4))
-
-# C: drive usage
-ax_c.set_title("C: Drive")
-ax_c.set_xlim(0, 100)
-ax_c.set_ylim(0, 1)
-
-# D: drive usage
-ax_d.set_title("D: Drive")
-ax_d.set_xlim(0, 100)
-ax_d.set_ylim(0, 1)
-
-# Canvas to embed matplotlib plot
-canvas = FigureCanvasTkAgg(fig, master=root)
-canvas.get_tk_widget().grid(row=5, column=0, columnspan=2)
 
 # Start the Tkinter event loop
 root.mainloop()
