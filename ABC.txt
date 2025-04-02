@@ -1,11 +1,38 @@
-Exception in Tkinter callback
-Traceback (most recent call last):
-  File "C:\ProgramData\Anaconda3\lib\tkinter\__init__.py", line 1892, in __call__
-    return self.func(*args)
-  File "C:\Users\KOSV1106\AppData\Local\Temp\1/ipykernel_2532/2720086366.py", line 136, in <lambda>
-    update_button = tk.Button(root, text="Update Metrics", command=lambda: update_metrics(server_var.get(), username, password))
-  File "C:\Users\KOSV1106\AppData\Local\Temp\1/ipykernel_2532/2720086366.py", line 77, in update_metrics
-    draw_speedometer(c_drive_usage, c_total_size, c_used_space, c_free_space, ax_c)
-  File "C:\Users\KOSV1106\AppData\Local\Temp\1/ipykernel_2532/2720086366.py", line 92, in draw_speedometer
-    ax.set_theta_direction(-1)
-AttributeError: 'AxesSubplot' object has no attribute 'set_theta_direction'
+# Function to draw the speedometer with updated color scheme
+def draw_speedometer(usage_percent, total_size, used_space, free_space, ax):
+    ax.clear()
+
+    # Set the plot to polar coordinates
+    ax.set_theta_offset(3.14159)  # Start from the left (half-circle)
+    ax.set_theta_direction(-1)  # Clockwise rotation
+
+    # Create the full circle for free space (gray color)
+    ax.bar(0, 1, width=3.14159, color='gray', alpha=0.3)  # 180 degrees for free space (gray)
+
+    # Define the angle for the used space (in radians)
+    angle = (usage_percent / 100) * 3.14159  # Angle in radians
+    
+    # Define color for used space based on usage
+    if usage_percent > 95:
+        used_color = 'red'  # Red for high usage
+    else:
+        used_color = 'green'  # Green for lower usage
+    
+    # Draw the used space (green or red)
+    ax.bar(0, 1, width=angle, color=used_color, alpha=0.7)  # Used space (variable width)
+
+    # Add the legend and GB data
+    ax.text(0, 0.5, f"Used: {used_space:.2f} GB ({usage_percent:.1f}%)", horizontalalignment='center', verticalalignment='center', fontweight='bold')
+    ax.text(0, 0.35, f"Free: {free_space:.2f} GB ({100 - usage_percent:.1f}%)", horizontalalignment='center', verticalalignment='center', fontweight='bold')
+
+    # Display range in GB below the gauge
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels([f"0 GB", f"{total_size:.2f} GB"])
+
+    ax.set_ylim(0, 1)  # Keep the radius at a fixed value
+    ax.set_yticklabels([])  # Remove radial tick marks
+
+    # Set limits for angular axis (half-circle 180 degrees)
+    ax.set_xlim(-0.5, 0.5)
+
+    canvas.draw()
