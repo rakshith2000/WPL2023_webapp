@@ -1,9 +1,11 @@
-import tkinter as tk
-from ttkbootstrap import Style
-from tkinter import ttk
-import psutil
+import wmi
+import socket
 from ping3 import ping
+from ttkbootstrap import Style
+import psutil
 import time
+from tkinter import ttk
+import tkinter as tk
 from speedometer import Speedometer
 
 # Function to check Ping Status
@@ -13,50 +15,78 @@ def check_ping(server_ip):
 
 # Function to check RDP status (this is a simplified example, you might need a more complex solution for real RDP checks)
 def check_rdp(server_ip):
-    # Assume RDP is running on port 3389
     try:
         with socket.create_connection((server_ip, 3389), timeout=5):
             return True
     except:
         return False
 
+# Function to fetch metrics from a remote server using WMI
+def fetch_remote_metrics(server_ip, username, password):
+    try:
+        # Connect to the remote server via WMI
+        connection = wmi.WMI(server=server_ip, user=username, password=password)
+
+        # CPU usage
+        cpu_usage = connection.query("SELECT LoadPercentage FROM Win32_Processor")[0].LoadPercentage
+        
+        # Memory usage
+        mem_info = connection.query("SELECT TotalVisibleMemorySize, FreePhysicalMemory FROM Win32_OperatingSystem")[0]
+        total_memory = mem_info.TotalVisibleMemorySize / 1024  # KB to MB
+        free_memory = mem_info.FreePhysicalMemory / 1024  # KB to MB
+        memory_usage = 100 - (free_memory / total_memory * 100)
+        
+        # Disk usage (C: drive)
+        c_drive = connection.query("SELECT Size, FreeSpace FROM Win32_LogicalDisk WHERE DeviceID = 'C:'")[0]
+        c_disk_usage = 100 - (c_drive.FreeSpace / c_drive.Size * 100)
+
+        # Disk usage (D: drive)
+        d_drive = connection.query("SELECT Size, FreeSpace FROM Win32_LogicalDisk WHERE DeviceID = 'D:'")[0]
+        d_disk_usage = 100 - (d_drive.FreeSpace / d_drive.Size * 100)
+
+        # Uptime (in days)
+        last_boot_time = connection.query("SELECT LastBootUpTime FROM Win32_OperatingSystem")[0].LastBootUpTime
+        uptime_seconds = (time.time() - last_boot_time.timestamp())  # Convert to seconds
+        uptime_days = uptime_seconds // (24 * 3600)
+
+        return cpu_usage, memory_usage, c_disk_usage, d_disk_usage, uptime_days
+
+    except Exception as e:
+        print(f"Error fetching metrics from remote server: {e}")
+        return None, None, None, None, None
+
 # Function to update server metrics
 def update_metrics():
     server_ip = server_combobox.get()
     
+    # Use the correct username and password to access remote servers (you should securely handle credentials)
+    username = "your_admin_username"
+    password = "your_admin_password"
+    
+    cpu_usage, memory_usage, c_disk_usage, d_disk_usage, uptime_days = fetch_remote_metrics(server_ip, username, password)
+
+    # Update the labels with the fetched remote data
+    if cpu_usage is not None:
+        cpu_usage_label.config(text=f"CPU Usage: {cpu_usage}%")
+        memory_usage_label.config(text=f"Memory Usage: {memory_usage}%")
+        c_drive_speedometer.set_value(c_disk_usage)
+        d_drive_speedometer.set_value(d_disk_usage)
+        uptime_label.config(text=f"Uptime: {int(uptime_days)} days")
+    else:
+        # Handle error case
+        cpu_usage_label.config(text="Error retrieving metrics")
+        memory_usage_label.config(text="Error retrieving metrics")
+        uptime_label.config(text="Error retrieving uptime")
+
+    # Check Ping and RDP connection status
     ping_status = check_ping(server_ip)
     rdp_status = check_rdp(server_ip)
-    
+
     ping_label.config(text="Ping Status: " + ("True" if ping_status else "False"), 
                       foreground="green" if ping_status else "red")
     
     rdp_label.config(text="RDP Connection: " + ("True" if rdp_status else "False"), 
                      foreground="green" if rdp_status else "red")
-    
-    # Get CPU and memory usage
-    cpu_usage = psutil.cpu_percent(interval=1)
-    memory_info = psutil.virtual_memory()
-    
-    cpu_usage_label.config(text=f"CPU Usage: {cpu_usage}%")
-    memory_usage_label.config(text=f"Memory Usage: {memory_info.percent}%")
-    
-    # Get disk usage (C: and D:)
-    c_drive_usage = psutil.disk_usage("C:").percent
-    d_drive_usage = psutil.disk_usage("D:").percent
-    
-    # Update speedometer views
-    c_drive_speedometer.set_value(c_drive_usage)
-    d_drive_speedometer.set_value(d_drive_usage)
-    
-    # Get uptime in days
-    uptime_seconds = time.time() - psutil.boot_time()
-    uptime_days = uptime_seconds // (24 * 3600)
-    uptime_label.config(text=f"Uptime: {int(uptime_days)} days")
-    
-    # System Information (similar to image you provided)
-    sys_info_label.config(text=f"System Information\nCPU: {psutil.cpu_count(logical=True)} cores\n"
-                              f"RAM: {psutil.virtual_memory().total // (1024 ** 3)} GB\n"
-                              f"OS: {psutil.os.name}")
 
 # GUI Setup
 style = Style(theme="superhero")
