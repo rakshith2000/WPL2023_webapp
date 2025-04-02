@@ -1,10 +1,13 @@
 import tkinter as tk
 from tkinter import ttk
-import psutil
 import subprocess
 import time
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import wmi
+
+# Initialize WMI client
+c = wmi.WMI()
 
 # Function to check the server ping
 def check_ping(server):
@@ -30,21 +33,29 @@ def check_rdp(server):
         print(f"Error checking RDP: {e}")
         return False
 
-# Function to get disk usage
-def get_disk_usage(drive):
+# Function to get disk usage and total size using WMI
+def get_disk_usage(drive_letter):
     try:
-        usage = psutil.disk_usage(drive)
-        return usage.percent
+        for disk in c.Win32_LogicalDisk(DriveType=3):  # DriveType=3 means Local Disk
+            if disk.DeviceID == drive_letter:
+                total_size = float(disk.Size) / (1024 * 1024 * 1024)  # Convert to GB
+                free_space = float(disk.FreeSpace) / (1024 * 1024 * 1024)  # Convert to GB
+                used_space = total_size - free_space
+                usage_percent = (used_space / total_size) * 100
+                return usage_percent, total_size, used_space, free_space
     except Exception as e:
         print(f"Error getting disk usage: {e}")
-        return 0
+        return 0, 0, 0, 0
 
-# Function to get server uptime in days
-def get_uptime(server):
+# Function to get server uptime in days using WMI
+def get_uptime():
     try:
-        uptime_seconds = time.time() - psutil.boot_time()
-        uptime_days = uptime_seconds // (24 * 3600)
-        return uptime_days
+        for os in c.Win32_OperatingSystem():
+            last_boot = os.LastBootUpTime.split()[0]  # Parse the last boot time
+            boot_time = time.strptime(last_boot, '%Y-%m-%d')  # Convert to struct_time
+            uptime_seconds = time.mktime(time.gmtime()) - time.mktime(boot_time)
+            uptime_days = uptime_seconds // (24 * 3600)
+            return uptime_days
     except Exception as e:
         print(f"Error getting uptime: {e}")
         return 0
@@ -60,30 +71,47 @@ def update_metrics(server):
     rdp_label.config(text=f"RDP Connection: {'True' if rdp_status else 'False'}", fg="green" if rdp_status else "red")
     
     # Update C: and D: drive usage
-    c_drive_usage = get_disk_usage('C:')
-    d_drive_usage = get_disk_usage('D:')
+    c_drive_usage, c_total_size, c_used_space, c_free_space = get_disk_usage('C:')
+    d_drive_usage, d_total_size, d_used_space, d_free_space = get_disk_usage('D:')
     
     # Plot C: drive speedometer
-    draw_speedometer(c_drive_usage, ax_c)
+    draw_speedometer(c_drive_usage, c_total_size, c_used_space, c_free_space, ax_c)
     
     # Plot D: drive speedometer
-    draw_speedometer(d_drive_usage, ax_d)
+    draw_speedometer(d_drive_usage, d_total_size, d_used_space, d_free_space, ax_d)
     
     # Update Uptime
-    uptime = get_uptime(server)
+    uptime = get_uptime()
     uptime_label.config(text=f"Uptime: {uptime} days")
 
-# Function to draw the speedometer
-def draw_speedometer(usage_percent, ax):
+# Function to draw the speedometer with updated color scheme
+def draw_speedometer(usage_percent, total_size, used_space, free_space, ax):
     ax.clear()
     ax.set_title("Disk Usage")
     ax.set_xlim(0, 100)
     ax.set_ylim(0, 1)
     ax.set_theta_direction(-1)
     
-    theta = 2 * 3.14159 * (usage_percent / 100)
+    # Define color for used space based on usage
+    if usage_percent > 95:
+        used_color = 'red'  # Red for high usage
+    else:
+        used_color = 'green'  # Green for lower usage
+    
+    # Draw the free space (gray)
     ax.barh(0, 1, left=0, height=0.2, color='gray', alpha=0.5)
-    ax.barh(0, 1, left=0, height=0.2, color='green' if usage_percent < 80 else 'red', alpha=0.7, theta=theta)
+    
+    # Draw the used space (green or red)
+    theta = 2 * 3.14159 * (usage_percent / 100)
+    ax.barh(0, 1, left=0, height=0.2, color=used_color, alpha=0.7, theta=theta)
+    
+    # Add the legend and GB data
+    ax.text(50, 0.25, f"Used: {used_space:.2f} GB ({usage_percent:.1f}%)", horizontalalignment='center', verticalalignment='center', fontweight='bold')
+    ax.text(50, 0.15, f"Free: {free_space:.2f} GB ({100 - usage_percent:.1f}%)", horizontalalignment='center', verticalalignment='center', fontweight='bold')
+
+    # Display range in GB below the gauge
+    ax.set_xticks([0, 100])
+    ax.set_xticklabels([f"0 GB", f"{total_size:.2f} GB"])
     
     canvas.draw()
 
