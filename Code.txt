@@ -6,13 +6,10 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import wmi
 
-# Initialize WMI client
-c = wmi.WMI()
-
 # Function to check the server ping
-def check_ping(server):
+def check_ping(remote_server):
     try:
-        response = subprocess.run(['ping', '-n', '1', server], stdout=subprocess.PIPE)
+        response = subprocess.run(['ping', '-n', '1', remote_server], stdout=subprocess.PIPE)
         if response.returncode == 0:
             return True
         else:
@@ -22,9 +19,9 @@ def check_ping(server):
         return False
 
 # Function to check if RDP connection is available
-def check_rdp(server):
+def check_rdp(remote_server):
     try:
-        response = subprocess.run(['telnet', server, '3389'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        response = subprocess.run(['telnet', remote_server, '3389'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if response.returncode == 0:
             return True
         else:
@@ -33,9 +30,10 @@ def check_rdp(server):
         print(f"Error checking RDP: {e}")
         return False
 
-# Function to get disk usage and total size using WMI
-def get_disk_usage(drive_letter):
+# Function to get disk usage and total size using WMI for a remote server
+def get_disk_usage(remote_server, username, password, drive_letter):
     try:
+        c = wmi.WMI(remote_server, user=username, password=password)
         for disk in c.Win32_LogicalDisk(DriveType=3):  # DriveType=3 means Local Disk
             if disk.DeviceID == drive_letter:
                 total_size = float(disk.Size) / (1024 * 1024 * 1024)  # Convert to GB
@@ -47,9 +45,10 @@ def get_disk_usage(drive_letter):
         print(f"Error getting disk usage: {e}")
         return 0, 0, 0, 0
 
-# Function to get server uptime in days using WMI
-def get_uptime():
+# Function to get server uptime in days using WMI for a remote server
+def get_uptime(remote_server, username, password):
     try:
+        c = wmi.WMI(remote_server, user=username, password=password)
         for os in c.Win32_OperatingSystem():
             last_boot = os.LastBootUpTime.split()[0]  # Parse the last boot time
             boot_time = time.strptime(last_boot, '%Y-%m-%d')  # Convert to struct_time
@@ -61,18 +60,18 @@ def get_uptime():
         return 0
 
 # Function to update server metrics
-def update_metrics(server):
+def update_metrics(remote_server, username, password):
     # Update Ping status
-    ping_status = check_ping(server)
+    ping_status = check_ping(remote_server)
     ping_label.config(text=f"Ping: {'True' if ping_status else 'False'}", fg="green" if ping_status else "red")
     
     # Update RDP connection status
-    rdp_status = check_rdp(server)
+    rdp_status = check_rdp(remote_server)
     rdp_label.config(text=f"RDP Connection: {'True' if rdp_status else 'False'}", fg="green" if rdp_status else "red")
     
     # Update C: and D: drive usage
-    c_drive_usage, c_total_size, c_used_space, c_free_space = get_disk_usage('C:')
-    d_drive_usage, d_total_size, d_used_space, d_free_space = get_disk_usage('D:')
+    c_drive_usage, c_total_size, c_used_space, c_free_space = get_disk_usage(remote_server, username, password, 'C:')
+    d_drive_usage, d_total_size, d_used_space, d_free_space = get_disk_usage(remote_server, username, password, 'D:')
     
     # Plot C: drive speedometer
     draw_speedometer(c_drive_usage, c_total_size, c_used_space, c_free_space, ax_c)
@@ -81,7 +80,7 @@ def update_metrics(server):
     draw_speedometer(d_drive_usage, d_total_size, d_used_space, d_free_space, ax_d)
     
     # Update Uptime
-    uptime = get_uptime()
+    uptime = get_uptime(remote_server, username, password)
     uptime_label.config(text=f"Uptime: {uptime} days")
 
 # Function to draw the speedometer with updated color scheme
@@ -120,7 +119,7 @@ root = tk.Tk()
 root.title("Server Health Check Dashboard")
 
 # Server selection dropdown
-server_list = ['Server1', 'Server2', 'Server3', 'Server4', 'Server5']  # Replace with actual server names
+server_list = ['192.168.1.100', '192.168.1.101', '192.168.1.102']  # Replace with actual IP addresses or hostnames of the remote servers
 server_var = tk.StringVar(value=server_list[0])
 
 dropdown_label = tk.Label(root, text="Select Server")
@@ -129,8 +128,12 @@ dropdown_label.grid(row=0, column=0, padx=10, pady=10)
 server_dropdown = ttk.Combobox(root, textvariable=server_var, values=server_list)
 server_dropdown.grid(row=0, column=1, padx=10, pady=10)
 
+# Server credentials (modify these as needed)
+username = "admin_user"  # Replace with the username for the remote server
+password = "admin_password"  # Replace with the password for the above user
+
 # Buttons to update metrics
-update_button = tk.Button(root, text="Update Metrics", command=lambda: update_metrics(server_var.get()))
+update_button = tk.Button(root, text="Update Metrics", command=lambda: update_metrics(server_var.get(), username, password))
 update_button.grid(row=1, column=0, columnspan=2, pady=20)
 
 # Display metrics
