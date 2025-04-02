@@ -1,9 +1,11 @@
-
-I have requirements of creating a health check dashboard using python tkinter to monitor some 10 windows servers performance metrics like Ping, RDP connection status, C: and D: drive usage, Uptime.
-
-Here my dashboard View should be like, left side there should be a panel with dropdown list of windows servers, when I click on any server, in remaining part of the dashboard, that particular server metrics should be displayed as below
-1) Ping status : True - Green/ False - Red
-2) RDP connection : True - Green/ False - Red
-3) C: drive : speedo meter view with disk usage design
-4) D: drive : speedo meter view with disk usage design
-5) Uptime: Number of days server is up
+Exception in Tkinter callback
+Traceback (most recent call last):
+  File "C:\ProgramData\Anaconda3\lib\tkinter\__init__.py", line 1892, in __call__
+    return self.func(*args)
+  File "C:\Users\KOSV1106\AppData\Local\Temp\1/ipykernel_2532/2720086366.py", line 136, in <lambda>
+    update_button = tk.Button(root, text="Update Metrics", command=lambda: update_metrics(server_var.get(), username, password))
+  File "C:\Users\KOSV1106\AppData\Local\Temp\1/ipykernel_2532/2720086366.py", line 77, in update_metrics
+    draw_speedometer(c_drive_usage, c_total_size, c_used_space, c_free_space, ax_c)
+  File "C:\Users\KOSV1106\AppData\Local\Temp\1/ipykernel_2532/2720086366.py", line 92, in draw_speedometer
+    ax.set_theta_direction(-1)
+AttributeError: 'AxesSubplot' object has no attribute 'set_theta_direction'
