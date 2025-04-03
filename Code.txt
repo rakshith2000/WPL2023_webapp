@@ -10,78 +10,26 @@ from datetime import datetime, timedelta
 import socket
 import math
 
-class Meter(ttk.Frame):
-    """Custom meter widget to replace ttkbootstrap.dial.Meter"""
-    def __init__(self, master, size=100, amountused=0, **kwargs):
-        super().__init__(master, **kwargs)
-        self.size = size
-        self.amountused = amountused
-        self.canvas = tk.Canvas(self, width=size, height=size//2, 
-                               bg=self.cget('bg'), highlightthickness=0)
-        self.canvas.pack()
-        self.text = self.canvas.create_text(size//2, size//3, 
-                                          text=f"{amountused}%", 
-                                          font=('Helvetica', 10, 'bold'))
-        self.draw_meter()
-        
-    def draw_meter(self):
-        self.canvas.delete("meter")
-        size = self.size
-        start_angle = 0
-        extent_angle = 180
-        
-        # Draw background arc
-        self.canvas.create_arc(5, 5, size-5, size-5, 
-                             start=start_angle, extent=extent_angle,
-                             outline="#e0e0e0", width=10, style="arc", tags="meter")
-        
-        # Calculate angle based on amount used (0-100%)
-        used_angle = extent_angle * (self.amountused / 100)
-        
-        # Determine color based on usage
-        if self.amountused < 80:
-            color = SUCCESS
-        elif self.amountused < 90:
-            color = WARNING
-        else:
-            color = DANGER
-        
-        # Draw usage arc
-        self.canvas.create_arc(5, 5, size-5, size-5, 
-                             start=start_angle, extent=used_angle,
-                             outline=color, width=10, style="arc", tags="meter")
-        
-        # Update text
-        self.canvas.itemconfig(self.text, text=f"{self.amountused}%")
-    
-    def configure(self, amountused=None, **kwargs):
-        if amountused is not None:
-            self.amountused = amountused
-            self.draw_meter()
-        super().configure(**kwargs)
-
 class ServerHealthDashboard:
     def __init__(self, master):
         self.master = master
         master.title("Windows Server Health Dashboard")
-        master.geometry("1400x800")
+        master.geometry("800x600")
         
         # Server list - replace with your actual servers
         self.servers = [
-            {"name": "Server1", "ip": "192.168.1.1", "rdp_port": 3389, 
+            {"name": "joedark.local", "ip": "127.0.0.1", "rdp_port": 3389, 
              "username": "admin", "password": "password"},
-            {"name": "Server2", "ip": "192.168.1.2", "rdp_port": 3389, 
+            {"name": "server2.example.com", "ip": "192.168.1.2", "rdp_port": 3389, 
              "username": "admin", "password": "password"},
             # Add more servers...
         ]
         
+        self.current_server_data = None
         self.create_widgets()
         self.update_queue = queue.Queue()
         self.running = True
         self.start_update_thread()
-        self.check_after_id = None
-        self.schedule_next_check()
-        self.server_frames = []
         
     def create_widgets(self):
         # Main container
@@ -91,195 +39,222 @@ class ServerHealthDashboard:
         # Header
         header = ttkb.Label(
             main_frame, 
-            text="Windows Server Health Dashboard", 
+            text="Server Health Dashboard", 
             font=('Helvetica', 16, 'bold'),
             bootstyle=PRIMARY
         )
         header.pack(pady=(0, 20))
         
-        # Create scrollable dashboard area
-        self.canvas = ttkb.Canvas(main_frame)
-        self.scrollbar = ttkb.Scrollbar(main_frame, orient=tk.VERTICAL, 
-                                       command=self.canvas.yview)
-        self.scrollable_frame = ttkb.Frame(self.canvas)
+        # Server selection controls
+        control_frame = ttkb.Frame(main_frame)
+        control_frame.pack(fill=tk.X, pady=(0, 20))
         
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(
-                scrollregion=self.canvas.bbox("all")
-            )
+        ttkb.Label(control_frame, text="Select Server:").pack(side=tk.LEFT, padx=5)
+        
+        self.server_var = tk.StringVar()
+        self.server_dropdown = ttkb.Combobox(
+            control_frame,
+            textvariable=self.server_var,
+            values=[s["name"] for s in self.servers],
+            state="readonly"
         )
+        self.server_dropdown.pack(side=tk.LEFT, padx=5)
+        self.server_dropdown.current(0)
         
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Create server status cards
-        self.create_server_cards()
-        
-        # Controls frame
-        controls_frame = ttkb.Frame(main_frame)
-        controls_frame.pack(fill=tk.X, pady=(10, 0))
-        
-        self.refresh_btn = ttkb.Button(
-            controls_frame,
-            text="Refresh Now",
-            command=self.force_refresh,
+        self.get_metrics_btn = ttkb.Button(
+            control_frame,
+            text="Get Metrics",
+            command=self.get_selected_server_metrics,
             bootstyle=SUCCESS
         )
-        self.refresh_btn.pack(side=tk.LEFT, padx=5)
+        self.get_metrics_btn.pack(side=tk.LEFT, padx=5)
         
-        self.auto_refresh_var = tk.BooleanVar(value=True)
-        self.auto_refresh_cb = ttkb.Checkbutton(
-            controls_frame,
-            text="Auto Refresh (60s)",
-            variable=self.auto_refresh_var,
-            bootstyle=INFO
-        )
-        self.auto_refresh_cb.pack(side=tk.LEFT, padx=5)
+        # Server info display frame
+        self.info_frame = ttkb.Frame(main_frame, padding=20)
+        self.info_frame.pack(fill=tk.BOTH, expand=True)
         
+        # Create info display labels (empty initially)
+        self.create_info_labels()
+        
+        # Status bar
         self.status_label = ttkb.Label(
-            controls_frame,
-            text="Last refresh: Never",
+            main_frame,
+            text="Select a server and click 'Get Metrics'",
             bootstyle=SECONDARY
         )
-        self.status_label.pack(side=tk.RIGHT)
+        self.status_label.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
     
-    def create_server_cards(self):
-        # Clear existing frames
-        for widget in self.scrollable_frame.winfo_children():
+    def create_info_labels(self):
+        # Clear existing widgets
+        for widget in self.info_frame.winfo_children():
             widget.destroy()
-        self.server_frames = []
         
-        # Create a card for each server
-        for i, server in enumerate(self.servers):
-            card = ttkb.Frame(
-                self.scrollable_frame,
-                padding=15,
-                bootstyle="light",
-                relief=tk.RAISED,
-                borderwidth=1
+        # Create a 4x2 grid for server info
+        rows = [
+            ["Hostname", "CPU Type"],
+            ["IP Address", "CPU Clock"],
+            ["Group Membership", "Operating System"],
+            ["CPU Cores", "Kernel Version"],
+            ["Total RAM", "Uptime"],
+            ["Load", "Memory Usage", "Disk Usage"]
+        ]
+        
+        for i, row in enumerate(rows):
+            row_frame = ttkb.Frame(self.info_frame)
+            row_frame.grid(row=i, column=0, sticky="ew", pady=2)
+            
+            for j, col in enumerate(row):
+                if i < 5:  # First 5 rows have 2 columns
+                    cell_frame = ttkb.Frame(row_frame)
+                    cell_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+                    
+                    ttkb.Label(cell_frame, text=col+":", font=('Helvetica', 9, 'bold')).pack(anchor="w")
+                    label = ttkb.Label(cell_frame, text="", font=('Helvetica', 9))
+                    label.pack(anchor="w")
+                    setattr(self, f"info_{i}_{j}", label)
+                else:  # Last row has 3 metrics
+                    if j == 0:  # Load
+                        cell_frame = ttkb.Frame(row_frame)
+                        cell_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+                        ttkb.Label(cell_frame, text=col+":", font=('Helvetica', 9, 'bold')).pack(anchor="w")
+                        label = ttkb.Label(cell_frame, text="", font=('Helvetica', 9))
+                        label.pack(anchor="w")
+                        setattr(self, f"info_load", label)
+                    elif j == 1:  # Memory
+                        cell_frame = ttkb.Frame(row_frame)
+                        cell_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+                        ttkb.Label(cell_frame, text=col+":", font=('Helvetica', 9, 'bold')).pack(anchor="w")
+                        label = ttkb.Label(cell_frame, text="", font=('Helvetica', 9))
+                        label.pack(anchor="w")
+                        setattr(self, f"info_mem", label)
+                    elif j == 2:  # Disk
+                        cell_frame = ttkb.Frame(row_frame)
+                        cell_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+                        ttkb.Label(cell_frame, text=col+":", font=('Helvetica', 9, 'bold')).pack(anchor="w")
+                        label = ttkb.Label(cell_frame, text="", font=('Helvetica', 9))
+                        label.pack(anchor="w")
+                        setattr(self, f"info_disk", label)
+    
+    def get_selected_server_metrics(self):
+        server_name = self.server_var.get()
+        server = next((s for s in self.servers if s["name"] == server_name), None)
+        
+        if server:
+            self.status_label.config(text=f"Fetching metrics for {server_name}...")
+            threading.Thread(target=self.check_server_status, args=(server,), daemon=True).start()
+    
+    def check_server_status(self, server):
+        result = {
+            "hostname": server["name"],
+            "ip_address": server["ip"],
+            "group_membership": "Main Group",  # Default value
+            "cpu_type": "Unknown",
+            "cpu_clock": "Unknown",
+            "os": "Unknown",
+            "cpu_cores": "Unknown",
+            "kernel_version": "Unknown",
+            "total_ram": "Unknown",
+            "uptime": "Unknown",
+            "load": "Unknown",
+            "memory_usage": "Unknown",
+            "disk_usage": "Unknown"
+        }
+        
+        try:
+            # WMI connection for detailed info
+            wmi_conn = wmi.WMI(
+                computer=server["ip"],
+                user=server["username"],
+                password=server["password"]
             )
-            card.grid(row=i, column=0, sticky="ew", padx=5, pady=5, ipadx=10, ipady=10)
-            self.server_frames.append(card)
             
-            # Server name header
-            header = ttkb.Label(
-                card,
-                text=server["name"],
-                font=('Helvetica', 12, 'bold'),
-                bootstyle=PRIMARY
-            )
-            header.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
+            # CPU Info
+            cpu_info = wmi_conn.Win32_Processor()[0]
+            result["cpu_type"] = cpu_info.Name
+            result["cpu_clock"] = f"{float(cpu_info.MaxClockSpeed)/1000:.2f} GHz"
+            result["cpu_cores"] = f"{cpu_info.NumberOfCores} physical, {cpu_info.NumberOfLogicalProcessors} virtual"
             
-            # First row of metrics
-            metrics_row1 = ttkb.Frame(card)
-            metrics_row1.grid(row=1, column=0, columnspan=4, sticky="ew")
-            
-            # Ping status
-            ping_frame = ttkb.Frame(metrics_row1)
-            ping_frame.pack(side=tk.LEFT, padx=10)
-            ttkb.Label(ping_frame, text="Ping:", font=('Helvetica', 9)).pack()
-            self.ping_label = ttkb.Label(
-                ping_frame,
-                text="Checking...",
-                font=('Helvetica', 10, 'bold')
-            )
-            self.ping_label.pack()
-            
-            # RDP status
-            rdp_frame = ttkb.Frame(metrics_row1)
-            rdp_frame.pack(side=tk.LEFT, padx=10)
-            ttkb.Label(rdp_frame, text="RDP:", font=('Helvetica', 9)).pack()
-            self.rdp_label = ttkb.Label(
-                rdp_frame,
-                text="Checking...",
-                font=('Helvetica', 10, 'bold')
-            )
-            self.rdp_label.pack()
-            
-            # Second row of metrics (with meters)
-            metrics_row2 = ttkb.Frame(card)
-            metrics_row2.grid(row=2, column=0, columnspan=4, sticky="ew", pady=10)
-            
-            # C: Drive Meter
-            c_drive_frame = ttkb.Frame(metrics_row2)
-            c_drive_frame.pack(side=tk.LEFT, padx=15)
-            ttkb.Label(c_drive_frame, text="C: Drive", font=('Helvetica', 9)).pack()
-            self.c_drive_meter = Meter(
-                c_drive_frame,
-                size=120,
-                amountused=0
-            )
-            self.c_drive_meter.pack()
-            
-            # D: Drive Meter
-            d_drive_frame = ttkb.Frame(metrics_row2)
-            d_drive_frame.pack(side=tk.LEFT, padx=15)
-            ttkb.Label(d_drive_frame, text="D: Drive", font=('Helvetica', 9)).pack()
-            self.d_drive_meter = Meter(
-                d_drive_frame,
-                size=120,
-                amountused=0
-            )
-            self.d_drive_meter.pack()
-            
-            # Third row of metrics
-            metrics_row3 = ttkb.Frame(card)
-            metrics_row3.grid(row=3, column=0, columnspan=4, sticky="ew")
-            
-            # CPU
-            cpu_frame = ttkb.Frame(metrics_row3)
-            cpu_frame.pack(side=tk.LEFT, padx=10)
-            ttkb.Label(cpu_frame, text="CPU:", font=('Helvetica', 9)).pack()
-            self.cpu_label = ttkb.Label(
-                cpu_frame,
-                text="Checking...",
-                font=('Helvetica', 10, 'bold')
-            )
-            self.cpu_label.pack()
-            
-            # RAM
-            ram_frame = ttkb.Frame(metrics_row3)
-            ram_frame.pack(side=tk.LEFT, padx=10)
-            ttkb.Label(ram_frame, text="RAM:", font=('Helvetica', 9)).pack()
-            self.ram_label = ttkb.Label(
-                ram_frame,
-                text="Checking...",
-                font=('Helvetica', 10, 'bold')
-            )
-            self.ram_label.pack()
+            # OS Info
+            os_info = wmi_conn.Win32_OperatingSystem()[0]
+            result["os"] = os_info.Caption
+            result["kernel_version"] = os_info.Version
+            result["total_ram"] = f"{int(os_info.TotalVisibleMemorySize)/1024/1024:.0f} GB"
             
             # Uptime
-            uptime_frame = ttkb.Frame(metrics_row3)
-            uptime_frame.pack(side=tk.LEFT, padx=10)
-            ttkb.Label(uptime_frame, text="Uptime:", font=('Helvetica', 9)).pack()
-            self.uptime_label = ttkb.Label(
-                uptime_frame,
-                text="Checking...",
-                font=('Helvetica', 10, 'bold')
-            )
-            self.uptime_label.pack()
+            last_boot = datetime.strptime(os_info.LastBootUpTime.split('.')[0], '%Y%m%d%H%M%S')
+            uptime = datetime.now() - last_boot
+            if uptime.days >= 30:
+                result["uptime"] = f"{uptime.days//30} months"
+            elif uptime.days >= 7:
+                result["uptime"] = f"{uptime.days//7} weeks"
+            else:
+                result["uptime"] = f"{uptime.days} days"
             
-            # Last checked
-            last_frame = ttkb.Frame(metrics_row3)
-            last_frame.pack(side=tk.LEFT, padx=10)
-            ttkb.Label(last_frame, text="Last Checked:", font=('Helvetica', 9)).pack()
-            self.last_label = ttkb.Label(
-                last_frame,
-                text="Never",
-                font=('Helvetica', 10)
-            )
-            self.last_label.pack()
+            # Memory Usage
+            free_ram = int(os_info.FreePhysicalMemory)
+            total_ram = int(os_info.TotalVisibleMemorySize)
+            used_ram = total_ram - free_ram
+            result["memory_usage"] = f"{used_ram/1024/1024:.1f} GB"
+            
+            # CPU Load
+            result["load"] = f"{cpu_info.LoadPercentage/100:.2f}"
+            
+            # Disk Usage
+            disks = wmi_conn.Win32_LogicalDisk(DriveType=3)
+            total_disk = sum(int(d.Size) for d in disks if d.Size)
+            free_disk = sum(int(d.FreeSpace) for d in disks if d.FreeSpace)
+            if total_disk > 0:
+                disk_usage = 100 - (free_disk / total_disk * 100)
+                result["disk_usage"] = f"{disk_usage:.2f}%"
+            
+        except Exception as e:
+            print(f"Error getting metrics: {e}")
+            # Use default values if WMI fails
+        
+        # Put result in queue for UI update
+        self.update_queue.put((server, result))
     
-    # [Rest of the methods remain the same as in the previous example]
-    # ... (update_server_status, check_server_status, etc.)
+    def start_update_thread(self):
+        self.update_thread = threading.Thread(
+            target=self.process_updates,
+            daemon=True
+        )
+        self.update_thread.start()
+    
+    def process_updates(self):
+        while self.running:
+            try:
+                update = self.update_queue.get(timeout=1)
+                if update:
+                    server, data = update
+                    self.update_server_display(server, data)
+            except queue.Empty:
+                continue
+    
+    def update_server_display(self, server, data):
+        # Update all the info labels
+        self.info_0_0.config(text=data["hostname"])
+        self.info_0_1.config(text=data["cpu_type"])
+        self.info_1_0.config(text=data["ip_address"])
+        self.info_1_1.config(text=data["cpu_clock"])
+        self.info_2_0.config(text=data["group_membership"])
+        self.info_2_1.config(text=data["os"])
+        self.info_3_0.config(text=data["cpu_cores"])
+        self.info_3_1.config(text=data["kernel_version"])
+        self.info_4_0.config(text=data["total_ram"])
+        self.info_4_1.config(text=data["uptime"])
+        self.info_load.config(text=data["load"])
+        self.info_mem.config(text=data["memory_usage"])
+        self.info_disk.config(text=data["disk_usage"])
+        
+        self.status_label.config(text=f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    def on_close(self):
+        self.running = False
+        self.master.destroy()
 
 if __name__ == "__main__":
     root = ttkb.Window(themename="solar")
     app = ServerHealthDashboard(root)
     root.protocol("WM_DELETE_WINDOW", app.on_close)
-    root.after(100, app.check_all_servers)  # Initial check after 100ms
     root.mainloop()
