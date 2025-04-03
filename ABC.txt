@@ -56,7 +56,7 @@ class SystemMonitorApp:
         ax.set_title(f'{label}: {usage:.1f}%', pad=10, fontsize=12, fontweight='bold', color='white')
         ax.grid(False)
         ax.set_axis_off()
-        
+        ax.annotate(f'{usage:.1f}%', xy=(0, 0), xytext=(1.1, 1.8), fontsize=14, color="white", ha="center")
         self.canvas.draw()
 
 root = tk.Tk()
