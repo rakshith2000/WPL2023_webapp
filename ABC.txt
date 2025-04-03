@@ -1,18 +1,17 @@
 import tkinter as tk
 from tkinter import ttk
 import psutil
-import time
-import threading
-from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
 
 class SystemMonitorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("System Health Dashboard")
         self.root.geometry("800x500")
-        
-        # Labels
+
+        # Title
         ttk.Label(root, text="System Health Dashboard", font=("Arial", 16)).pack(pady=10)
 
         # CPU Usage
@@ -27,17 +26,11 @@ class SystemMonitorApp:
         self.disk_label = ttk.Label(root, text="Disk Usage: 0%", font=("Arial", 12))
         self.disk_label.pack()
 
-        # Graphs Section
-        self.fig = Figure(figsize=(5, 2), dpi=100)
-        self.ax_cpu = self.fig.add_subplot(111)
-        self.ax_cpu.set_title("CPU Load Over Time")
-        self.ax_cpu.set_ylim(0, 100)
-        self.cpu_data = []
-        
+        # Matplotlib Figure for Memory Gauge
+        self.fig, self.ax = plt.subplots(figsize=(3, 2))
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
         self.canvas.get_tk_widget().pack()
-        
-        # Start Data Update
+
         self.update_data()
 
     def update_data(self):
@@ -51,20 +44,46 @@ class SystemMonitorApp:
         self.mem_label.config(text=f"Memory Usage: {mem_usage}%")
         self.disk_label.config(text=f"Disk Usage: {disk_usage}%")
 
-        # Update Graph Data
-        self.cpu_data.append(cpu_usage)
-        if len(self.cpu_data) > 20:
-            self.cpu_data.pop(0)
-        
-        self.ax_cpu.clear()
-        self.ax_cpu.plot(self.cpu_data, label="CPU Load")
-        self.ax_cpu.set_ylim(0, 100)
-        self.ax_cpu.legend()
-        
-        self.canvas.draw()
+        # Update Memory Gauge
+        self.update_memory_gauge(mem_usage)
 
         # Schedule next update
         self.root.after(1000, self.update_data)
+
+    def update_memory_gauge(self, mem_usage):
+        self.ax.clear()
+        self.ax.set_xlim(-1, 1)
+        self.ax.set_ylim(-0.1, 1.2)
+
+        # Set colors based on usage
+        if mem_usage > 95:
+            color = "red"
+        elif mem_usage > 80:
+            color = "yellow"
+        else:
+            color = "green"
+
+        # Draw semi-circle gauge
+        theta = np.linspace(0, np.pi, 100)
+        x = np.cos(theta)
+        y = np.sin(theta)
+        self.ax.plot(x, y, color="black", lw=2)  # Gauge outline
+
+        # Fill the gauge based on memory usage
+        theta_fill = np.linspace(0, np.pi * (mem_usage / 100), 50)
+        x_fill = np.cos(theta_fill)
+        y_fill = np.sin(theta_fill)
+        self.ax.fill_betweenx(y_fill, 0, x_fill, color=color, alpha=0.7)
+
+        # Hide axes
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+        self.ax.set_frame_on(False)
+
+        # Draw text label
+        self.ax.text(0, -0.2, f"{mem_usage:.1f}%", ha="center", va="center", fontsize=14, fontweight="bold")
+
+        self.canvas.draw()
 
 # Run Application
 root = tk.Tk()
