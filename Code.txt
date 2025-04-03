@@ -1,138 +1,470 @@
-import wmi
-import socket
-from ping3 import ping
-from ttkbootstrap import Style
-import psutil
-import time
-from tkinter import ttk
 import tkinter as tk
-from speedometer import Speedometer
+from tkinter import ttk
+import ttkbootstrap as ttkb
+from ttkbootstrap.constants import *
+from ttkbootstrap.dial import Meter
+import threading
+import queue
+import pythonping
+import wmi
+from datetime import datetime, timedelta
+import socket
 
-# Function to check Ping Status
-def check_ping(server_ip):
-    response = ping(server_ip)
-    return response is not None
-
-# Function to check RDP status (this is a simplified example, you might need a more complex solution for real RDP checks)
-def check_rdp(server_ip):
-    try:
-        with socket.create_connection((server_ip, 3389), timeout=5):
-            return True
-    except:
-        return False
-
-# Function to fetch metrics from a remote server using WMI
-def fetch_remote_metrics(server_ip, username, password):
-    try:
-        # Connect to the remote server via WMI
-        connection = wmi.WMI(server=server_ip, user=username, password=password)
-
-        # CPU usage
-        cpu_usage = connection.query("SELECT LoadPercentage FROM Win32_Processor")[0].LoadPercentage
+class ServerHealthDashboard:
+    def __init__(self, master):
+        self.master = master
+        master.title("Windows Server Health Dashboard")
+        master.geometry("1400x900")
         
-        # Memory usage
-        mem_info = connection.query("SELECT TotalVisibleMemorySize, FreePhysicalMemory FROM Win32_OperatingSystem")[0]
-        total_memory = mem_info.TotalVisibleMemorySize / 1024  # KB to MB
-        free_memory = mem_info.FreePhysicalMemory / 1024  # KB to MB
-        memory_usage = 100 - (free_memory / total_memory * 100)
+        # Server list - replace with your actual servers
+        self.servers = [
+            {"name": "Server1", "ip": "192.168.1.1", "rdp_port": 3389, "username": "admin", "password": "password"},
+            {"name": "Server2", "ip": "192.168.1.2", "rdp_port": 3389, "username": "admin", "password": "password"},
+            # Add more servers...
+        ]
         
-        # Disk usage (C: drive)
-        c_drive = connection.query("SELECT Size, FreeSpace FROM Win32_LogicalDisk WHERE DeviceID = 'C:'")[0]
-        c_disk_usage = 100 - (c_drive.FreeSpace / c_drive.Size * 100)
-
-        # Disk usage (D: drive)
-        d_drive = connection.query("SELECT Size, FreeSpace FROM Win32_LogicalDisk WHERE DeviceID = 'D:'")[0]
-        d_disk_usage = 100 - (d_drive.FreeSpace / d_drive.Size * 100)
-
-        # Uptime (in days)
-        last_boot_time = connection.query("SELECT LastBootUpTime FROM Win32_OperatingSystem")[0].LastBootUpTime
-        uptime_seconds = (time.time() - last_boot_time.timestamp())  # Convert to seconds
-        uptime_days = uptime_seconds // (24 * 3600)
-
-        return cpu_usage, memory_usage, c_disk_usage, d_disk_usage, uptime_days
-
-    except Exception as e:
-        print(f"Error fetching metrics from remote server: {e}")
-        return None, None, None, None, None
-
-# Function to update server metrics
-def update_metrics():
-    server_ip = server_combobox.get()
+        self.create_widgets()
+        self.update_queue = queue.Queue()
+        self.running = True
+        self.start_update_thread()
+        self.check_after_id = None
+        self.schedule_next_check()
+        self.server_frames = []  # To store individual server frames
+        
+    def create_widgets(self):
+        # Main container
+        main_frame = ttkb.Frame(self.master, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Header
+        header = ttkb.Label(
+            main_frame, 
+            text="Windows Server Health Dashboard", 
+            font=('Helvetica', 16, 'bold'),
+            bootstyle=PRIMARY
+        )
+        header.pack(pady=(0, 20))
+        
+        # Create notebook for tabs
+        self.notebook = ttkb.Notebook(main_frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # Dashboard tab with scrollable canvas
+        self.dashboard_tab = ttkb.Frame(self.notebook)
+        self.notebook.add(self.dashboard_tab, text="Dashboard")
+        
+        self.canvas = ttkb.Canvas(self.dashboard_tab)
+        self.scrollbar = ttkb.Scrollbar(self.dashboard_tab, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.scrollable_frame = ttkb.Frame(self.canvas)
+        
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(
+                scrollregion=self.canvas.bbox("all")
+            )
+        )
+        
+        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Create server status cards
+        self.create_server_cards()
+        
+        # Logs tab
+        self.logs_tab = ttkb.Frame(self.notebook)
+        self.notebook.add(self.logs_tab, text="Logs")
+        self.create_logs_tab()
+        
+        # Controls frame
+        controls_frame = ttkb.Frame(main_frame)
+        controls_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        self.refresh_btn = ttkb.Button(
+            controls_frame,
+            text="Refresh Now",
+            command=self.force_refresh,
+            bootstyle=SUCCESS
+        )
+        self.refresh_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.auto_refresh_var = tk.BooleanVar(value=True)
+        self.auto_refresh_cb = ttkb.Checkbutton(
+            controls_frame,
+            text="Auto Refresh (60s)",
+            variable=self.auto_refresh_var,
+            bootstyle=INFO
+        )
+        self.auto_refresh_cb.pack(side=tk.LEFT, padx=5)
+        
+        self.status_label = ttkb.Label(
+            controls_frame,
+            text="Last refresh: Never",
+            bootstyle=SECONDARY
+        )
+        self.status_label.pack(side=tk.RIGHT)
     
-    # Use the correct username and password to access remote servers (you should securely handle credentials)
-    username = "your_admin_username"
-    password = "your_admin_password"
+    def create_server_cards(self):
+        # Clear existing frames
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+        self.server_frames = []
+        
+        # Create a card for each server
+        for i, server in enumerate(self.servers):
+            card = ttkb.Frame(
+                self.scrollable_frame,
+                padding=10,
+                bootstyle=INFO,
+                relief=tk.RAISED,
+                borderwidth=1
+            )
+            card.grid(row=i, column=0, sticky="ew", padx=5, pady=5)
+            self.server_frames.append(card)
+            
+            # Server name header
+            header = ttkb.Label(
+                card,
+                text=server["name"],
+                font=('Helvetica', 12, 'bold'),
+                bootstyle=PRIMARY
+            )
+            header.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
+            
+            # Ping status
+            ping_frame = ttkb.Frame(card)
+            ping_frame.grid(row=1, column=0, padx=5, pady=5)
+            ttkb.Label(ping_frame, text="Ping:").pack()
+            self.ping_label = ttkb.Label(
+                ping_frame,
+                text="Checking...",
+                font=('Helvetica', 10),
+                bootstyle=SECONDARY
+            )
+            self.ping_label.pack()
+            
+            # RDP status
+            rdp_frame = ttkb.Frame(card)
+            rdp_frame.grid(row=1, column=1, padx=5, pady=5)
+            ttkb.Label(rdp_frame, text="RDP:").pack()
+            self.rdp_label = ttkb.Label(
+                rdp_frame,
+                text="Checking...",
+                font=('Helvetica', 10),
+                bootstyle=SECONDARY
+            )
+            self.rdp_label.pack()
+            
+            # C: Drive Meter
+            c_drive_frame = ttkb.Frame(card)
+            c_drive_frame.grid(row=1, column=2, padx=5, pady=5)
+            ttkb.Label(c_drive_frame, text="C: Drive").pack()
+            self.c_drive_meter = Meter(
+                c_drive_frame,
+                metersize=100,
+                padding=5,
+                amountused=0,
+                metertype="semi",
+                stripethickness=10,
+                showtext=True,
+                interactive=False,
+                bootstyle=PRIMARY
+            )
+            self.c_drive_meter.pack()
+            
+            # D: Drive Meter
+            d_drive_frame = ttkb.Frame(card)
+            d_drive_frame.grid(row=1, column=3, padx=5, pady=5)
+            ttkb.Label(d_drive_frame, text="D: Drive").pack()
+            self.d_drive_meter = Meter(
+                d_drive_frame,
+                metersize=100,
+                padding=5,
+                amountused=0,
+                metertype="semi",
+                stripethickness=10,
+                showtext=True,
+                interactive=False,
+                bootstyle=PRIMARY
+            )
+            self.d_drive_meter.pack()
+            
+            # CPU and RAM
+            cpu_frame = ttkb.Frame(card)
+            cpu_frame.grid(row=2, column=0, padx=5, pady=5)
+            ttkb.Label(cpu_frame, text="CPU:").pack()
+            self.cpu_label = ttkb.Label(
+                cpu_frame,
+                text="Checking...",
+                font=('Helvetica', 10),
+                bootstyle=SECONDARY
+            )
+            self.cpu_label.pack()
+            
+            ram_frame = ttkb.Frame(card)
+            ram_frame.grid(row=2, column=1, padx=5, pady=5)
+            ttkb.Label(ram_frame, text="RAM:").pack()
+            self.ram_label = ttkb.Label(
+                ram_frame,
+                text="Checking...",
+                font=('Helvetica', 10),
+                bootstyle=SECONDARY
+            )
+            self.ram_label.pack()
+            
+            # Uptime
+            uptime_frame = ttkb.Frame(card)
+            uptime_frame.grid(row=2, column=2, padx=5, pady=5)
+            ttkb.Label(uptime_frame, text="Uptime:").pack()
+            self.uptime_label = ttkb.Label(
+                uptime_frame,
+                text="Checking...",
+                font=('Helvetica', 10),
+                bootstyle=SECONDARY
+            )
+            self.uptime_label.pack()
+            
+            # Last checked
+            last_frame = ttkb.Frame(card)
+            last_frame.grid(row=2, column=3, padx=5, pady=5)
+            ttkb.Label(last_frame, text="Last Checked:").pack()
+            self.last_label = ttkb.Label(
+                last_frame,
+                text="Never",
+                font=('Helvetica', 10),
+                bootstyle=SECONDARY
+            )
+            self.last_label.pack()
     
-    cpu_usage, memory_usage, c_disk_usage, d_disk_usage, uptime_days = fetch_remote_metrics(server_ip, username, password)
-
-    # Update the labels with the fetched remote data
-    if cpu_usage is not None:
-        cpu_usage_label.config(text=f"CPU Usage: {cpu_usage}%")
-        memory_usage_label.config(text=f"Memory Usage: {memory_usage}%")
-        c_drive_speedometer.set_value(c_disk_usage)
-        d_drive_speedometer.set_value(d_disk_usage)
-        uptime_label.config(text=f"Uptime: {int(uptime_days)} days")
-    else:
-        # Handle error case
-        cpu_usage_label.config(text="Error retrieving metrics")
-        memory_usage_label.config(text="Error retrieving metrics")
-        uptime_label.config(text="Error retrieving uptime")
-
-    # Check Ping and RDP connection status
-    ping_status = check_ping(server_ip)
-    rdp_status = check_rdp(server_ip)
-
-    ping_label.config(text="Ping Status: " + ("True" if ping_status else "False"), 
-                      foreground="green" if ping_status else "red")
+    def create_logs_tab(self):
+        self.log_text = tk.Text(
+            self.logs_tab,
+            wrap=tk.WORD,
+            state=tk.DISABLED,
+            height=20,
+            font=('Consolas', 10)
+        )
+        
+        scrollbar = ttkb.Scrollbar(
+            self.logs_tab,
+            orient=tk.VERTICAL,
+            command=self.log_text.yview
+        )
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     
-    rdp_label.config(text="RDP Connection: " + ("True" if rdp_status else "False"), 
-                     foreground="green" if rdp_status else "red")
+    def log_message(self, message):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        formatted_msg = f"[{timestamp}] {message}\n"
+        
+        self.log_text.configure(state=tk.NORMAL)
+        self.log_text.insert(tk.END, formatted_msg)
+        self.log_text.configure(state=tk.DISABLED)
+        self.log_text.see(tk.END)
+    
+    def start_update_thread(self):
+        self.update_thread = threading.Thread(
+            target=self.process_updates,
+            daemon=True
+        )
+        self.update_thread.start()
+    
+    def process_updates(self):
+        while self.running:
+            try:
+                update = self.update_queue.get(timeout=1)
+                if update:
+                    server_idx, data = update
+                    self.update_server_status(server_idx, data)
+            except queue.Empty:
+                continue
+    
+    def update_server_status(self, server_idx, data):
+        card = self.server_frames[server_idx]
+        
+        # Find all widgets in this card
+        children = card.winfo_children()
+        labels = [child for child in children if isinstance(child, ttkb.Label)]
+        meters = [child for child in children if isinstance(child, Meter)]
+        
+        # Update ping
+        if "ping" in data:
+            ping_text = f"{data['ping']:.0f}ms" if data['ping'] != "Down" else "Down"
+            labels[1].config(text=ping_text)
+            labels[1].config(bootstyle=SUCCESS if data['ping'] != "Down" else DANGER)
+        
+        # Update RDP
+        if "rdp" in data:
+            rdp_text = "Open" if data['rdp'] else "Closed"
+            labels[3].config(text=rdp_text)
+            labels[3].config(bootstyle=SUCCESS if data['rdp'] else DANGER)
+        
+        # Update C: Drive meter
+        if "c_drive" in data and data['c_drive'] != "N/A":
+            meters[0].configure(amountused=data['c_drive'])
+            if data['c_drive'] < 80:
+                meters[0].configure(bootstyle=SUCCESS)
+            elif data['c_drive'] < 90:
+                meters[0].configure(bootstyle=WARNING)
+            else:
+                meters[0].configure(bootstyle=DANGER)
+        
+        # Update D: Drive meter
+        if "d_drive" in data and data['d_drive'] != "N/A":
+            meters[1].configure(amountused=data['d_drive'])
+            if data['d_drive'] < 80:
+                meters[1].configure(bootstyle=SUCCESS)
+            elif data['d_drive'] < 90:
+                meters[1].configure(bootstyle=WARNING)
+            else:
+                meters[1].configure(bootstyle=DANGER)
+        
+        # Update CPU
+        if "cpu" in data and data['cpu'] != "N/A":
+            labels[5].config(text=f"{data['cpu']}%")
+            if data['cpu'] < 70:
+                labels[5].config(bootstyle=SUCCESS)
+            elif data['cpu'] < 90:
+                labels[5].config(bootstyle=WARNING)
+            else:
+                labels[5].config(bootstyle=DANGER)
+        
+        # Update RAM
+        if "ram" in data and data['ram'] != "N/A":
+            labels[7].config(text=f"{data['ram']}%")
+            if data['ram'] < 70:
+                labels[7].config(bootstyle=SUCCESS)
+            elif data['ram'] < 90:
+                labels[7].config(bootstyle=WARNING)
+            else:
+                labels[7].config(bootstyle=DANGER)
+        
+        # Update uptime
+        if "uptime" in data and data['uptime'] != "N/A":
+            uptime_str = str(timedelta(seconds=data['uptime'])).split('.')[0]
+            labels[9].config(text=uptime_str)
+        
+        # Update last checked
+        if "last_checked" in data:
+            labels[11].config(text=data['last_checked'].strftime("%Y-%m-%d %H:%M:%S"))
+        
+        # Update status label
+        self.status_label.config(text=f"Last refresh: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    def check_server_status(self, server_idx):
+        server = self.servers[server_idx]
+        result = {}
+        
+        try:
+            # Ping check
+            try:
+                ping_response = pythonping.ping(server["ip"], count=2, timeout=2)
+                if ping_response.success():
+                    result["ping"] = ping_response.rtt_avg_ms
+                else:
+                    result["ping"] = "Down"
+            except Exception as e:
+                result["ping"] = "Down"
+                self.log_message(f"Ping failed for {server['name']}: {str(e)}")
+            
+            # RDP check
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                result["rdp"] = sock.connect_ex((server["ip"], server["rdp_port"])) == 0
+                sock.close()
+            except Exception as e:
+                result["rdp"] = False
+                self.log_message(f"RDP check failed for {server['name']}: {str(e)}")
+            
+            # WMI checks (drive, cpu, ram, uptime)
+            try:
+                wmi_conn = wmi.WMI(
+                    computer=server["ip"],
+                    user=server["username"],
+                    password=server["password"]
+                )
+                
+                # Drive space
+                for disk in wmi_conn.Win32_LogicalDisk(DriveType=3):
+                    if disk.DeviceID == "C:":
+                        total = int(disk.Size)
+                        free = int(disk.FreeSpace)
+                        result["c_drive"] = round(100 - (free / total * 100), 1)
+                    elif disk.DeviceID == "D:":
+                        total = int(disk.Size)
+                        free = int(disk.FreeSpace)
+                        result["d_drive"] = round(100 - (free / total * 100), 1)
+                
+                # CPU usage
+                cpu_usage = wmi_conn.Win32_Processor()[0].LoadPercentage
+                result["cpu"] = cpu_usage
+                
+                # RAM usage
+                os = wmi_conn.Win32_OperatingSystem()[0]
+                total_ram = int(os.TotalVisibleMemorySize)
+                free_ram = int(os.FreePhysicalMemory)
+                result["ram"] = round(100 - (free_ram / total_ram * 100), 1)
+                
+                # Uptime
+                last_boot = datetime.strptime(os.LastBootUpTime.split('.')[0], '%Y%m%d%H%M%S')
+                result["uptime"] = (datetime.now() - last_boot).total_seconds()
+                
+            except Exception as e:
+                self.log_message(f"WMI connection failed for {server['name']}: {str(e)}")
+                result["c_drive"] = "N/A"
+                result["d_drive"] = "N/A"
+                result["cpu"] = "N/A"
+                result["ram"] = "N/A"
+                result["uptime"] = "N/A"
+            
+            result["last_checked"] = datetime.now()
+            
+        except Exception as e:
+            self.log_message(f"Error checking {server['name']}: {str(e)}")
+        
+        # Put result in queue
+        self.update_queue.put((server_idx, result))
+    
+    def check_all_servers(self):
+        if not self.running:
+            return
+            
+        self.log_message("Starting server health checks...")
+        
+        threads = []
+        for i in range(len(self.servers)):
+            t = threading.Thread(target=self.check_server_status, args=(i,))
+            t.start()
+            threads.append(t)
+        
+        # Schedule next check if auto-refresh is enabled
+        if self.auto_refresh_var.get():
+            self.schedule_next_check()
+    
+    def schedule_next_check(self):
+        if self.check_after_id:
+            self.master.after_cancel(self.check_after_id)
+        
+        self.check_after_id = self.master.after(60000, self.check_all_servers)
+    
+    def force_refresh(self):
+        self.log_message("Manual refresh triggered")
+        self.check_all_servers()
+    
+    def on_close(self):
+        self.running = False
+        if self.check_after_id:
+            self.master.after_cancel(self.check_after_id)
+        self.master.destroy()
 
-# GUI Setup
-style = Style(theme="superhero")
-root = style.master
-root.title("Windows Server Health Check Dashboard")
-
-# Left Panel: Server Dropdown
-frame_left = ttk.Frame(root, width=200, padding=10)
-frame_left.grid(row=0, column=0, sticky="nsew")
-
-server_list = ["192.168.1.101", "192.168.1.102", "192.168.1.103"]  # Replace with actual server IPs
-server_combobox = ttk.Combobox(frame_left, values=server_list, state="readonly")
-server_combobox.grid(row=0, column=0, pady=10)
-server_combobox.set(server_list[0])
-
-# Update Button
-update_button = ttk.Button(frame_left, text="Update", command=update_metrics)
-update_button.grid(row=1, column=0, pady=10)
-
-# Right Panel: Server Metrics Display
-frame_right = ttk.Frame(root, padding=10)
-frame_right.grid(row=0, column=1, sticky="nsew")
-
-ping_label = ttk.Label(frame_right, text="Ping Status: ", font=("Arial", 12))
-ping_label.grid(row=0, column=0, sticky="w")
-
-rdp_label = ttk.Label(frame_right, text="RDP Connection: ", font=("Arial", 12))
-rdp_label.grid(row=1, column=0, sticky="w")
-
-cpu_usage_label = ttk.Label(frame_right, text="CPU Usage: ", font=("Arial", 12))
-cpu_usage_label.grid(row=2, column=0, sticky="w")
-
-memory_usage_label = ttk.Label(frame_right, text="Memory Usage: ", font=("Arial", 12))
-memory_usage_label.grid(row=3, column=0, sticky="w")
-
-uptime_label = ttk.Label(frame_right, text="Uptime: ", font=("Arial", 12))
-uptime_label.grid(row=4, column=0, sticky="w")
-
-sys_info_label = ttk.Label(frame_right, text="System Info", font=("Arial", 12))
-sys_info_label.grid(row=5, column=0, sticky="w")
-
-# Speedometers for C: and D: drives
-c_drive_speedometer = Speedometer(frame_right, width=150, height=150)
-c_drive_speedometer.grid(row=6, column=0, padx=20)
-d_drive_speedometer = Speedometer(frame_right, width=150, height=150)
-d_drive_speedometer.grid(row=6, column=1, padx=20)
-
-# Run the GUI loop
-root.mainloop()
+if __name__ == "__main__":
+    root = ttkb.Window(themename="solar")
+    app = ServerHealthDashboard(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_close)
+    root.after(100, app.check_all_servers)  # Initial check after 100ms
+    root.mainloop()
