@@ -1,45 +1,10 @@
----------------------------------------------------------------------------
-TclError                                  Traceback (most recent call last)
-~\AppData\Local\Temp\1/ipykernel_3688/1818197409.py in <module>
-    277 if __name__ == "__main__":
-    278     root = ttkb.Window(themename="solar")
---> 279     app = ServerHealthDashboard(root)
-    280     root.protocol("WM_DELETE_WINDOW", app.on_close)
-    281     root.after(100, app.check_all_servers)  # Initial check after 100ms
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 
-~\AppData\Local\Temp\1/ipykernel_3688/1818197409.py in __init__(self, master)
-     73         ]
-     74 
----> 75         self.create_widgets()
-     76         self.update_queue = queue.Queue()
-     77         self.running = True
+my_w = ttk.Window()
+my_w.geometry("500x500")
+m1 = ttk.Meter(my_w, amountused=65, metersize=400, meterthickness=50, bootstyle='success')
 
-~\AppData\Local\Temp\1/ipykernel_3688/1818197409.py in create_widgets(self)
-    115 
-    116         # Create server status cards
---> 117         self.create_server_cards()
-    118 
-    119         # Controls frame
+m1.grid(row=1, column=1, pads=10, pady=10)
 
-~\AppData\Local\Temp\1/ipykernel_3688/1818197409.py in create_server_cards(self)
-    206             c_drive_frame.pack(side=tk.LEFT, padx=15)
-    207             ttkb.Label(c_drive_frame, text="C: Drive", font=('Helvetica', 9)).pack()
---> 208             self.c_drive_meter = Meter(
-    209                 c_drive_frame,
-    210                 size=120,
-
-~\AppData\Local\Temp\1/ipykernel_3688/1818197409.py in __init__(self, master, size, amountused, **kwargs)
-     18         self.amountused = amountused
-     19         self.canvas = tk.Canvas(self, width=size, height=size//2, 
----> 20                                bg=self.cget('bg'), highlightthickness=0)
-     21         self.canvas.pack()
-     22         self.text = self.canvas.create_text(size//2, size//3, 
-
-C:\ProgramData\Anaconda3\lib\tkinter\__init__.py in cget(self, key)
-   1650     def cget(self, key):
-   1651         """Return the resource value for a KEY given as string."""
--> 1652         return self.tk.call(self._w, 'cget', '-' + key)
-   1653 
-   1654     __getitem__ = cget
-
-TclError: unknown option "-bg"
+my_w.mainloop()
