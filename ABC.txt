@@ -9,40 +9,49 @@ class SystemMonitorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("System Health Dashboard")
-        self.root.geometry("800x500")
+        self.root.geometry("850x550")
+        self.root.configure(bg="#222831")  # Dark background color
 
         # Title
-        ttk.Label(root, text="System Health Dashboard", font=("Arial", 16)).pack(pady=10)
+        ttk.Label(root, text="System Health Dashboard", font=("Helvetica", 20, "bold"), 
+                  foreground="white", background="#222831").pack(pady=15)
 
-        # CPU Usage
-        self.cpu_label = ttk.Label(root, text="CPU Load: 0%", font=("Arial", 12))
-        self.cpu_label.pack()
+        # Create a frame for stats
+        self.stats_frame = tk.Frame(root, bg="#393E46", padx=20, pady=15, bd=2, relief="ridge")
+        self.stats_frame.pack(pady=10)
 
-        # Memory Usage
-        self.mem_label = ttk.Label(root, text="Memory Usage: 0%", font=("Arial", 12))
-        self.mem_label.pack()
+        # CPU Label
+        self.cpu_label = ttk.Label(self.stats_frame, text="CPU Load: 0%", font=("Arial", 14, "bold"), 
+                                   foreground="white", background="#393E46")
+        self.cpu_label.grid(row=0, column=0, padx=20, pady=5)
 
-        # Disk Usage
-        self.disk_label = ttk.Label(root, text="Disk Usage: 0%", font=("Arial", 12))
-        self.disk_label.pack()
+        # Memory Label
+        self.mem_label = ttk.Label(self.stats_frame, text="Memory Usage: 0%", font=("Arial", 14, "bold"), 
+                                   foreground="white", background="#393E46")
+        self.mem_label.grid(row=0, column=1, padx=20, pady=5)
+
+        # Disk Label
+        self.disk_label = ttk.Label(self.stats_frame, text="Disk Usage: 0%", font=("Arial", 14, "bold"), 
+                                    foreground="white", background="#393E46")
+        self.disk_label.grid(row=0, column=2, padx=20, pady=5)
 
         # Matplotlib Figure for Memory Gauge
-        self.fig, self.ax = plt.subplots(figsize=(3, 2))
+        self.fig, self.ax = plt.subplots(figsize=(3.5, 2))
         self.canvas = FigureCanvasTkAgg(self.fig, master=root)
-        self.canvas.get_tk_widget().pack()
+        self.canvas.get_tk_widget().pack(pady=20)
 
         self.update_data()
 
     def update_data(self):
-        # Fetch System Stats
+        """Fetch system stats and update the UI every second."""
         cpu_usage = psutil.cpu_percent(interval=1)
         mem_usage = psutil.virtual_memory().percent
         disk_usage = psutil.disk_usage('/').percent
 
         # Update Labels
-        self.cpu_label.config(text=f"CPU Load: {cpu_usage}%")
-        self.mem_label.config(text=f"Memory Usage: {mem_usage}%")
-        self.disk_label.config(text=f"Disk Usage: {disk_usage}%")
+        self.cpu_label.config(text=f"CPU Load: {cpu_usage}%", foreground="#00ADB5")
+        self.mem_label.config(text=f"Memory Usage: {mem_usage}%", foreground="#F8B400")
+        self.disk_label.config(text=f"Disk Usage: {disk_usage}%", foreground="#FF5722")
 
         # Update Memory Gauge
         self.update_memory_gauge(mem_usage)
@@ -51,37 +60,39 @@ class SystemMonitorApp:
         self.root.after(1000, self.update_data)
 
     def update_memory_gauge(self, mem_usage):
+        """Update the semi-speedometer gauge for memory usage."""
         self.ax.clear()
         self.ax.set_xlim(-1, 1)
         self.ax.set_ylim(-0.1, 1.2)
 
-        # Set colors based on usage
+        # Determine color based on usage
         if mem_usage > 95:
-            color = "red"
+            color = "#D72323"  # Red
         elif mem_usage > 80:
-            color = "yellow"
+            color = "#F8B400"  # Yellow
         else:
-            color = "green"
+            color = "#00ADB5"  # Green
 
-        # Draw semi-circle gauge
+        # Draw gauge arc
         theta = np.linspace(0, np.pi, 100)
         x = np.cos(theta)
         y = np.sin(theta)
-        self.ax.plot(x, y, color="black", lw=2)  # Gauge outline
+        self.ax.plot(x, y, color="white", lw=3)  # Outline
 
-        # Fill the gauge based on memory usage
+        # Fill based on memory usage
         theta_fill = np.linspace(0, np.pi * (mem_usage / 100), 50)
         x_fill = np.cos(theta_fill)
         y_fill = np.sin(theta_fill)
-        self.ax.fill_betweenx(y_fill, 0, x_fill, color=color, alpha=0.7)
+        self.ax.fill_betweenx(y_fill, 0, x_fill, color=color, alpha=0.8)
 
         # Hide axes
         self.ax.set_xticks([])
         self.ax.set_yticks([])
         self.ax.set_frame_on(False)
 
-        # Draw text label
-        self.ax.text(0, -0.2, f"{mem_usage:.1f}%", ha="center", va="center", fontsize=14, fontweight="bold")
+        # Draw memory percentage
+        self.ax.text(0, -0.2, f"{mem_usage:.1f}%", ha="center", va="center", 
+                     fontsize=16, fontweight="bold", color="white")
 
         self.canvas.draw()
 
