@@ -1,5 +1,51 @@
-Flask==2.2.2
-Flask_Login==0.6.2
-flask_sqlalchemy==3.0.2
-Werkzeug==2.2.2
-gunicorn
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Configuration
+cpu_usage = 80  # Example value (change this to your actual CPU usage)
+
+# Colors and thresholds
+green = '#4dab6d'
+yellow = '#f6ee54'
+red = '#ee4d55'
+threshold_1 = 80  # Yellow starts at 80%
+threshold_2 = 95  # Red starts at 95%
+
+# Set color based on CPU usage
+if cpu_usage < threshold_1:
+    color = green
+elif threshold_1 <= cpu_usage < threshold_2:
+    color = yellow
+else:
+    color = red
+
+# Create figure
+fig = plt.figure(figsize=(10, 6))
+ax = fig.add_subplot(projection='polar')
+
+ax.bar(x=np.radians(180), width=np.radians(180), height=0.5, bottom=1, 
+       color='lightgray', edgecolor='white', linewidth=2, align='edge')
+
+# CPU usage indicator (starting exactly from 180°)
+ax.bar(x=np.radians(180), width=np.radians(180 * cpu_usage / 100), height=0.5, bottom=1, 
+       color=color, edgecolor='white', linewidth=2, align='edge')
+
+plt.annotate("CPU: 80%", xytext=(0,0), xy=(1.1, 2.0), fontsize=20, color="black", ha="center"
+            );
+            
+# Customize plot
+#ax.set_theta_zero_location('E')  # 0% at the left
+ax.set_theta_direction(-1)       # Clockwise direction
+ax.set_ylim(0, 2)               # Radial limits
+ax.set_xticks(np.radians([0, 45, 90, 135, 180]))  # Tick positions
+ax.set_xticklabels(['0%', '25%', '50%', '75%', '100%'])  # Tick labels
+ax.set_title(f'CPU Usage: {cpu_usage}%', pad=0, fontsize=14, fontweight='bold')
+ax.grid(False)
+ax.set_axis_off()  # Hide radial axis
+
+
+plt.tight_layout()
+plt.savefig('cpu_gauge.png', dpi=100)
+plt.close()
