@@ -9,36 +9,22 @@ class SystemMonitorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("System Health Dashboard")
-        self.root.geometry("850x550")
+        self.root.geometry("900x600")
         self.root.configure(bg="#222831")  # Dark background color
 
         # Title
         ttk.Label(root, text="System Health Dashboard", font=("Helvetica", 20, "bold"), 
                   foreground="white", background="#222831").pack(pady=15)
 
-        # Create a frame for stats
-        self.stats_frame = tk.Frame(root, bg="#393E46", padx=20, pady=15, bd=2, relief="ridge")
-        self.stats_frame.pack(pady=10)
+        # Create a frame for the gauges
+        self.gauge_frame = tk.Frame(root, bg="#222831")
+        self.gauge_frame.pack()
 
-        # CPU Label
-        self.cpu_label = ttk.Label(self.stats_frame, text="CPU Load: 0%", font=("Arial", 14, "bold"), 
-                                   foreground="white", background="#393E46")
-        self.cpu_label.grid(row=0, column=0, padx=20, pady=5)
-
-        # Memory Label
-        self.mem_label = ttk.Label(self.stats_frame, text="Memory Usage: 0%", font=("Arial", 14, "bold"), 
-                                   foreground="white", background="#393E46")
-        self.mem_label.grid(row=0, column=1, padx=20, pady=5)
-
-        # Disk Label
-        self.disk_label = ttk.Label(self.stats_frame, text="Disk Usage: 0%", font=("Arial", 14, "bold"), 
-                                    foreground="white", background="#393E46")
-        self.disk_label.grid(row=0, column=2, padx=20, pady=5)
-
-        # Matplotlib Figure for Memory Gauge
-        self.fig, self.ax = plt.subplots(figsize=(3.5, 2))
-        self.canvas = FigureCanvasTkAgg(self.fig, master=root)
-        self.canvas.get_tk_widget().pack(pady=20)
+        # Create Matplotlib figures for four gauges (CPU, RAM, Disk C, Disk D)
+        self.fig, self.axs = plt.subplots(2, 2, figsize=(8, 5))
+        self.fig.patch.set_facecolor("#222831")  # Set background to match UI
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.gauge_frame)
+        self.canvas.get_tk_widget().pack()
 
         self.update_data()
 
@@ -46,53 +32,53 @@ class SystemMonitorApp:
         """Fetch system stats and update the UI every second."""
         cpu_usage = psutil.cpu_percent(interval=1)
         mem_usage = psutil.virtual_memory().percent
-        disk_usage = psutil.disk_usage('/').percent
+        disk_c_usage = psutil.disk_usage('C:\\').percent
+        disk_d_usage = psutil.disk_usage('D:\\').percent if len(psutil.disk_partitions()) > 1 else 0
 
-        # Update Labels
-        self.cpu_label.config(text=f"CPU Load: {cpu_usage}%", foreground="#00ADB5")
-        self.mem_label.config(text=f"Memory Usage: {mem_usage}%", foreground="#F8B400")
-        self.disk_label.config(text=f"Disk Usage: {disk_usage}%", foreground="#FF5722")
-
-        # Update Memory Gauge
-        self.update_memory_gauge(mem_usage)
+        # Update all gauges
+        self.update_gauge(self.axs[0, 0], cpu_usage, "CPU Usage", "#00ADB5")
+        self.update_gauge(self.axs[0, 1], mem_usage, "Memory Usage", "#F8B400")
+        self.update_gauge(self.axs[1, 0], disk_c_usage, "Disk C: Usage", "#FF5722")
+        self.update_gauge(self.axs[1, 1], disk_d_usage, "Disk D: Usage", "#AA00FF")
 
         # Schedule next update
         self.root.after(1000, self.update_data)
 
-    def update_memory_gauge(self, mem_usage):
-        """Update the semi-speedometer gauge for memory usage."""
-        self.ax.clear()
-        self.ax.set_xlim(-1, 1)
-        self.ax.set_ylim(-0.1, 1.2)
+    def update_gauge(self, ax, usage, label, color):
+        """Update the semi-speedometer gauge for CPU, RAM, or Disk."""
+        ax.clear()
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-0.1, 1.2)
 
-        # Determine color based on usage
-        if mem_usage > 95:
+        # Change color based on usage level
+        if usage > 95:
             color = "#D72323"  # Red
-        elif mem_usage > 80:
+        elif usage > 80:
             color = "#F8B400"  # Yellow
         else:
-            color = "#00ADB5"  # Green
+            color = color  # Default color
 
         # Draw gauge arc
         theta = np.linspace(0, np.pi, 100)
         x = np.cos(theta)
         y = np.sin(theta)
-        self.ax.plot(x, y, color="white", lw=3)  # Outline
+        ax.plot(x, y, color="white", lw=3)  # Outline
 
-        # Fill based on memory usage
-        theta_fill = np.linspace(0, np.pi * (mem_usage / 100), 50)
+        # Fill based on usage
+        theta_fill = np.linspace(0, np.pi * (usage / 100), 50)
         x_fill = np.cos(theta_fill)
         y_fill = np.sin(theta_fill)
-        self.ax.fill_betweenx(y_fill, 0, x_fill, color=color, alpha=0.8)
+        ax.fill_betweenx(y_fill, 0, x_fill, color=color, alpha=0.8)
 
         # Hide axes
-        self.ax.set_xticks([])
-        self.ax.set_yticks([])
-        self.ax.set_frame_on(False)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_frame_on(False)
 
-        # Draw memory percentage
-        self.ax.text(0, -0.2, f"{mem_usage:.1f}%", ha="center", va="center", 
-                     fontsize=16, fontweight="bold", color="white")
+        # Draw usage percentage
+        ax.text(0, -0.2, f"{usage:.1f}%", ha="center", va="center", 
+                fontsize=16, fontweight="bold", color="white")
+        ax.set_title(label, fontsize=12, color="white", pad=10)
 
         self.canvas.draw()
 
