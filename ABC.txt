@@ -1,10 +1,72 @@
-import ttkbootstrap as ttk
-from ttkbootstrap.constants import *
+import tkinter as tk
+from tkinter import ttk
+import psutil
+import time
+import threading
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-my_w = ttk.Window()
-my_w.geometry("500x500")
-m1 = ttk.Meter(my_w, amountused=65, metersize=400, meterthickness=50, bootstyle='success')
+class SystemMonitorApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("System Health Dashboard")
+        self.root.geometry("800x500")
+        
+        # Labels
+        ttk.Label(root, text="System Health Dashboard", font=("Arial", 16)).pack(pady=10)
 
-m1.grid(row=1, column=1, pads=10, pady=10)
+        # CPU Usage
+        self.cpu_label = ttk.Label(root, text="CPU Load: 0%", font=("Arial", 12))
+        self.cpu_label.pack()
 
-my_w.mainloop()
+        # Memory Usage
+        self.mem_label = ttk.Label(root, text="Memory Usage: 0%", font=("Arial", 12))
+        self.mem_label.pack()
+
+        # Disk Usage
+        self.disk_label = ttk.Label(root, text="Disk Usage: 0%", font=("Arial", 12))
+        self.disk_label.pack()
+
+        # Graphs Section
+        self.fig = Figure(figsize=(5, 2), dpi=100)
+        self.ax_cpu = self.fig.add_subplot(111)
+        self.ax_cpu.set_title("CPU Load Over Time")
+        self.ax_cpu.set_ylim(0, 100)
+        self.cpu_data = []
+        
+        self.canvas = FigureCanvasTkAgg(self.fig, master=root)
+        self.canvas.get_tk_widget().pack()
+        
+        # Start Data Update
+        self.update_data()
+
+    def update_data(self):
+        # Fetch System Stats
+        cpu_usage = psutil.cpu_percent(interval=1)
+        mem_usage = psutil.virtual_memory().percent
+        disk_usage = psutil.disk_usage('/').percent
+
+        # Update Labels
+        self.cpu_label.config(text=f"CPU Load: {cpu_usage}%")
+        self.mem_label.config(text=f"Memory Usage: {mem_usage}%")
+        self.disk_label.config(text=f"Disk Usage: {disk_usage}%")
+
+        # Update Graph Data
+        self.cpu_data.append(cpu_usage)
+        if len(self.cpu_data) > 20:
+            self.cpu_data.pop(0)
+        
+        self.ax_cpu.clear()
+        self.ax_cpu.plot(self.cpu_data, label="CPU Load")
+        self.ax_cpu.set_ylim(0, 100)
+        self.ax_cpu.legend()
+        
+        self.canvas.draw()
+
+        # Schedule next update
+        self.root.after(1000, self.update_data)
+
+# Run Application
+root = tk.Tk()
+app = SystemMonitorApp(root)
+root.mainloop()
