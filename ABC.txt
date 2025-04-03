@@ -1,54 +1,45 @@
-Exception in Tkinter callback
-Traceback (most recent call last):
-  File "C:\ProgramData\Anaconda3\lib\tkinter\__init__.py", line 1892, in __call__
-    return self.func(*args)
-  File "C:\Users\KOSV1106\AppData\Local\Temp\1/ipykernel_2532/4094893807.py", line 130, in <lambda>
-    update_button = ttk.Button(info_frame, text="Update Metrics", command=lambda: update_dashboard(server_var.get(), "kosv1106", "c3RM21nvPx2&%32fsp93v"))
-  File "C:\Users\KOSV1106\AppData\Local\Temp\1/ipykernel_2532/4094893807.py", line 101, in update_dashboard
-    cpu_fig = create_gauge("CPU Usage", cpu_usage, "blue")
-  File "C:\Users\KOSV1106\AppData\Local\Temp\1/ipykernel_2532/4094893807.py", line 62, in create_gauge
-    return go.Figure(go.Indicator(
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\plotly\graph_objects\__init__.py", line 303, in __getattr__
-    return orig_getattr(import_name)
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\_plotly_utils\importers.py", line 37, in __getattr__
-    return getattr(class_module, class_name)
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\plotly\graph_objs\__init__.py", line 303, in __getattr__
-    return orig_getattr(import_name)
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\_plotly_utils\importers.py", line 36, in __getattr__
-    class_module = importlib.import_module(rel_module, parent_name)
-  File "C:\ProgramData\Anaconda3\lib\importlib\__init__.py", line 127, in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-  File "<frozen importlib._bootstrap>", line 1030, in _gcd_import
-  File "<frozen importlib._bootstrap>", line 1007, in _find_and_load
-  File "<frozen importlib._bootstrap>", line 986, in _find_and_load_unlocked
-  File "<frozen importlib._bootstrap>", line 680, in _load_unlocked
-  File "<frozen importlib._bootstrap_external>", line 850, in exec_module
-  File "<frozen importlib._bootstrap>", line 228, in _call_with_frames_removed
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\plotly\graph_objs\_figure.py", line 1, in <module>
-    from plotly.basedatatypes import BaseFigure
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\plotly\basedatatypes.py", line 10, in <module>
-    from _plotly_utils.utils import (
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\_plotly_utils\utils.py", line 9, in <module>
-    from _plotly_utils.basevalidators import (
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\_plotly_utils\basevalidators.py", line 11, in <module>
-    import narwhals.stable.v1 as nw
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\narwhals\__init__.py", line 7, in <module>
-    from narwhals import stable
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\narwhals\stable\__init__.py", line 3, in <module>
-    from narwhals.stable import v1
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\narwhals\stable\v1\__init__.py", line 24, in <module>
-    from narwhals.functions import Then as NwThen
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\narwhals\functions.py", line 30, in <module>
-    from narwhals.series import Series
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\narwhals\series.py", line 22, in <module>
-    from narwhals.typing import IntoSeriesT
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\narwhals\typing.py", line 10, in <module>
-    from narwhals._compliant import CompliantDataFrame
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\narwhals\_compliant\__init__.py", line 3, in <module>
-    from narwhals._compliant.dataframe import CompliantDataFrame
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\narwhals\_compliant\dataframe.py", line 21, in <module>
-    from narwhals._translate import ArrowConvertible
-  File "C:\ProgramData\Anaconda3\Lib\site-packages\narwhals\_translate.py", line 49, in <module>
-    FromNumpyDT_contra = TypeVar(
-TypeError: __init__() got an unexpected keyword argument 'default'
-​
+---------------------------------------------------------------------------
+TclError                                  Traceback (most recent call last)
+~\AppData\Local\Temp\1/ipykernel_3688/1818197409.py in <module>
+    277 if __name__ == "__main__":
+    278     root = ttkb.Window(themename="solar")
+--> 279     app = ServerHealthDashboard(root)
+    280     root.protocol("WM_DELETE_WINDOW", app.on_close)
+    281     root.after(100, app.check_all_servers)  # Initial check after 100ms
+
+~\AppData\Local\Temp\1/ipykernel_3688/1818197409.py in __init__(self, master)
+     73         ]
+     74 
+---> 75         self.create_widgets()
+     76         self.update_queue = queue.Queue()
+     77         self.running = True
+
+~\AppData\Local\Temp\1/ipykernel_3688/1818197409.py in create_widgets(self)
+    115 
+    116         # Create server status cards
+--> 117         self.create_server_cards()
+    118 
+    119         # Controls frame
+
+~\AppData\Local\Temp\1/ipykernel_3688/1818197409.py in create_server_cards(self)
+    206             c_drive_frame.pack(side=tk.LEFT, padx=15)
+    207             ttkb.Label(c_drive_frame, text="C: Drive", font=('Helvetica', 9)).pack()
+--> 208             self.c_drive_meter = Meter(
+    209                 c_drive_frame,
+    210                 size=120,
+
+~\AppData\Local\Temp\1/ipykernel_3688/1818197409.py in __init__(self, master, size, amountused, **kwargs)
+     18         self.amountused = amountused
+     19         self.canvas = tk.Canvas(self, width=size, height=size//2, 
+---> 20                                bg=self.cget('bg'), highlightthickness=0)
+     21         self.canvas.pack()
+     22         self.text = self.canvas.create_text(size//2, size//3, 
+
+C:\ProgramData\Anaconda3\lib\tkinter\__init__.py in cget(self, key)
+   1650     def cget(self, key):
+   1651         """Return the resource value for a KEY given as string."""
+-> 1652         return self.tk.call(self._w, 'cget', '-' + key)
+   1653 
+   1654     __getitem__ = cget
+
+TclError: unknown option "-bg"
