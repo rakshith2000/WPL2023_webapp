@@ -4,6 +4,95 @@ from ttkbootstrap.style import Style
 import tkinter as tk  # Needed for tk.Menu
 import psutil
 
+
+class DiskProgressBar(tk.Frame):
+    def __init__(self, master, path="C:\\", label="Disk", fg_color="#28a745", **kwargs):
+        super().__init__(master, **kwargs)
+        self.path = path
+        self.label = label
+        self.fg_color = fg_color
+        self.configure(bg="#FFF0F5")
+
+        # Canvas setup
+        self.canvas = tk.Canvas(self, width=600, height=100, bg="#FFF0F5", highlightthickness=0)
+        self.canvas.pack(pady=0)
+
+        # Initial draw
+        self.update_disk_usage()
+
+    def update_disk_usage(self):
+        usage = psutil.disk_usage(self.path)
+        self.used_gb = usage.used / (1024 ** 3)
+        self.total_gb = usage.total / (1024 ** 3)
+        self.used_per = (self.used_gb / self.total_gb) * 100
+
+        # Determine color based on usage
+        if self.used_per >= 95.00:
+            self.fg_color = "#dc3545"  # Red (danger)
+        elif self.used_per >= 85.00:
+            self.fg_color = "#ffc107"  # Yellow (warning)
+        else:
+            self.fg_color = "#28a745"  # Green (success)
+
+        self.draw_progress_bar()
+
+    def draw_progress_bar(self):
+        self.canvas.delete("all")  # Clear previous drawing
+
+        # Dimensions
+        bar_width = 500
+        bar_height = 20
+        bar_x = 20
+        bar_y = 30
+
+        # Background
+        self.canvas.create_rectangle(
+            bar_x, bar_y,
+            bar_x + bar_width, bar_y + bar_height,
+            fill="#E0E0E0", outline=""
+        )
+
+        # Progress fill
+        fill_width = (self.used_per / 100) * bar_width
+        self.canvas.create_rectangle(
+            bar_x, bar_y,
+            bar_x + fill_width, bar_y + bar_height,
+            fill=self.fg_color, outline=""
+        )
+
+        # Text labels
+        self.canvas.create_text(
+            80, 10,
+            text=f"{self.label} Usage ({self.path})",
+            font=("Helvetica", 10, "bold"),
+            fill="#333"
+        )
+
+        self.canvas.create_text(
+            250, 60,
+            text=f"{self.used_per:.1f}% used ({self.used_gb:.1f} GB / {self.total_gb:.1f} GB)",
+            font=("Helvetica", 10, "bold"),
+            fill="#666"
+        )
+
+        # Min/Max labels
+        self.canvas.create_text(
+            bar_x, bar_y + bar_height + 10,
+            text="0 GB",
+            font=("Helvetica", 10, "bold"),
+            fill="#444",
+            anchor="w"
+        )
+
+        self.canvas.create_text(
+            bar_x + bar_width, bar_y + bar_height + 10,
+            text=f"{self.total_gb:.0f} GB",
+            font=("Helvetica", 10, "bold"),
+            fill="#444",
+            anchor="e"
+        )
+
+
 class BaseMeter(tk.Frame):
     def __init__(self, master, value, per_value, max_value, unit, label, sublabel, fg_color, **kwargs):
         super().__init__(master, **kwargs)
@@ -18,10 +107,10 @@ class BaseMeter(tk.Frame):
         self.outer_radius = 90
         self.inner_radius = 70
         self.center_x = 120
-        self.center_y = 135
+        self.center_y = 110
         self.configure(bg="#FFF0F5")
         self.canvas = tk.Canvas(self, width=240, height=150, bg="#FFF0F5", highlightthickness=0)
-        self.canvas.pack()
+        self.canvas.pack(pady=0)
 
         self.update_meter_color()
         self.draw_meter()
@@ -81,9 +170,9 @@ class CPUSemiCircularMeter(BaseMeter):
                          sublabel="", fg_color="#007bff", **kwargs)
 
     def draw_text(self):
-        self.canvas.create_text(self.center_x, 90,
+        self.canvas.create_text(self.center_x, 70,
                                 text=f"{self.value:.1f}%", font=("Helvetica", 12, "bold"), fill="#333")
-        self.canvas.create_text(self.center_x, 115,
+        self.canvas.create_text(self.center_x, 95,
                                 text=self.label, font=("Helvetica", 10, "bold"), fill="#666")
 
 
@@ -102,9 +191,9 @@ class StorageSemiCircularMeter(BaseMeter):
                          fg_color=fg_color, **kwargs)
 
     def draw_text(self):
-        self.canvas.create_text(self.center_x, 90,
+        self.canvas.create_text(self.center_x, 70,
                                 text=f"{self.per_value:.1f}%", font=("Helvetica", 12, "bold"), fill="#333")
-        self.canvas.create_text(self.center_x, 115,
+        self.canvas.create_text(self.center_x, 95,
                                 text=self.sublabel, font=("Helvetica", 10, "bold"), fill="#666")
 
 class SystemHealthCheckDashboard(ttkb.Frame):
@@ -121,6 +210,8 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         self.create_header()
         self.create_left_pane()
         self.create_main_area()
+
+        self.update_meters()
 
     def create_header(self):
         header_frame = ttkb.Frame(self, padding=10, bootstyle=PRIMARY)
@@ -202,25 +293,173 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         get_metrics_btn.pack(pady=(0, 10))
 
     def create_main_area(self):
-        main_area = ttkb.Frame(self, padding=10)
+        main_area = ttkb.Frame(self, padding=(10, 10, 10, 10))
         main_area.grid(row=1, column=1, sticky="nsew")
 
-        # Sample content - replace with your actual content
-        # Create container for meters
-        self.meters_frame = ttkb.Frame(main_area)
-        self.meters_frame.pack(fill="both", expand=True)
+        # Add border to the content container
+        content_frame = ttkb.Frame(main_area, relief="solid", borderwidth=1)
+        content_frame.pack(fill="both", expand=True)
 
-        # Initialize meters
-        self.cpu_meter = CPUSemiCircularMeter(self.meters_frame)
-        self.cpu_meter.pack(side="left", padx=20, pady=10)
+        # Create container for system info and meters
+        content_container = ttkb.Frame(content_frame)
+        content_container.pack(side="top",fill="both", expand=True, padx=10, pady=10)
 
-        self.ram_meter = StorageSemiCircularMeter(self.meters_frame, label="RAM")
-        self.ram_meter.pack(side="left", padx=20, pady=10)
 
-        self.disk_meter = StorageSemiCircularMeter(self.meters_frame, label="Disk", path="C:\\")
-        self.disk_meter.pack(side="left", padx=20, pady=10)
+        # System Information LabelFrame (right side of connectivity)
+        sysinfo_frame = ttkb.LabelFrame(
+            content_container,
+            text="System Information",
+            bootstyle="cosmo",
+            padding=10,
+            width=300  # Fixed width for system info panel
+        )
+        sysinfo_frame.pack(side="left", fill="y", padx=(0, 20))
 
-        self.update_meters()
+        # System Information Data
+        sys_info = [
+            ("Server Name:", "USWIW1308.kohlerco.com"),
+            ("IP Address:", "192.168.10.12"),
+            ("Operating System:", "Windows Server 2016"),
+            ("OS Build Version:", "10.0.14393"),
+            ("CPU Cores:", str(psutil.cpu_count())),
+            ("Total RAM:", f"{round(psutil.virtual_memory().total / (1024 ** 3))} GB")
+        ]
+
+        # Create info labels with proper indentation
+        for i, (key, value) in enumerate(sys_info):
+            # Key label (light color)
+            ttkb.Label(
+                sysinfo_frame,
+                text=key,
+                font=("Microsoft Sans Serif", 10, "bold"),
+                foreground="#888888",
+                anchor="w"
+            ).pack(fill="x", pady=(5, 0))
+
+            # Value label (bold and dark, indented)
+            ttkb.Label(
+                sysinfo_frame,
+                text=f"    {value}",  # 4-space indentation
+                font=("Cambria", 12, "bold"),
+                foreground="#333333",
+                anchor="w"
+            ).pack(fill="x", pady=(0, 5))
+
+        # System Connectivity LabelFrame (leftmost)
+        conn_frame = ttkb.LabelFrame(
+            content_container,
+            text="System Connectivity",
+            bootstyle="cosmo",
+            padding=10,
+            width=250  # Fixed width for connectivity panel
+        )
+        conn_frame.pack(side="top", fill="x", padx=(0, 0), pady=(0, 10), anchor="n", expand=False)
+
+        # Connectivity status boxes
+        status_frame = ttkb.Frame(conn_frame)
+        status_frame.pack(fill="x", pady=15)
+
+        # Ping Status
+        ping_frame = ttkb.Frame(status_frame)
+        ping_frame.pack(side="left", expand=True)
+        ttkb.Label(ping_frame, text="Ping Status:", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+        self.ping_status = ttkb.Label(
+            ping_frame,
+            text="Success",
+            font=("Cambria", 12, "bold"),
+            foreground="green",
+            relief="solid",
+            borderwidth=1,
+            padding=5
+        )
+        self.ping_status.pack(pady=5)
+
+        # RDP Connection
+        rdp_frame = ttkb.Frame(status_frame)
+        rdp_frame.pack(side="left", expand=True)
+        ttkb.Label(rdp_frame, text="RDP Connection:", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+        self.rdp_status = ttkb.Label(
+            rdp_frame,
+            text="Failure",
+            font=("Cambria", 12, "bold"),
+            foreground="red",
+            relief="solid",
+            borderwidth=1,
+            padding=5
+        )
+        self.rdp_status.pack(pady=5)
+
+        # RDP Connection
+        telnet_frame = ttkb.Frame(status_frame)
+        telnet_frame.pack(side="left", expand=True)
+        ttkb.Label(telnet_frame, text="Telnet Connection:", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+        self.telnet_status = ttkb.Label(
+            telnet_frame,
+            text="N/A",
+            font=("Cambria", 12, "bold"),
+            foreground="grey",
+            relief="solid",
+            borderwidth=1,
+            padding=5
+        )
+        self.telnet_status.pack(pady=5)
+
+        # Server Uptime
+        uptime_frame = ttkb.Frame(status_frame)
+        uptime_frame.pack(side="left", expand=True)
+        ttkb.Label(uptime_frame, text="Server Uptime:", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+        self.uptime_status = ttkb.Label(
+            uptime_frame,
+            text="1 Day 5 Hours",
+            font=("Cambria", 12, "bold"),
+            relief="solid",
+            borderwidth=1,
+            padding=5
+        )
+        self.uptime_status.pack(pady=5)
+
+        # System Performance Frame (stacked below System Connectivity)
+        perf_frame = ttkb.LabelFrame(
+            content_container,
+            text="System Performance",
+            bootstyle="cosmo",
+            padding=10
+        )
+        perf_frame.pack(side="top", fill="x", expand=False, pady=(0, 10))
+
+        meters_container = ttkb.Frame(perf_frame)
+        meters_container.pack(expand=True)
+
+        # For a tighter layout, use this instead of the grid version:
+        cpu_frame = ttkb.Frame(perf_frame)
+        cpu_frame.pack(side="left", expand=True, padx=10)
+
+        ttkb.Label(cpu_frame, text="CPU Usage", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+        self.cpu_meter = CPUSemiCircularMeter(cpu_frame)
+        self.cpu_meter.pack()
+
+        ram_frame = ttkb.Frame(perf_frame)
+        ram_frame.pack(side="left", expand=True, padx=10)
+
+        ttkb.Label(ram_frame, text="RAM Usage", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+        self.ram_meter = StorageSemiCircularMeter(ram_frame, label="RAM")
+        self.ram_meter.pack()
+
+        # System Performance Frame (stacked below System Connectivity)
+        disk_frame = ttkb.LabelFrame(
+            content_container,
+            text="Disk Performance",
+            bootstyle="cosmo",
+            padding=10
+        )
+        disk_frame.pack(side="top", fill="x", expand=False, pady=(0, 10))
+
+        self.c_drive_bar = DiskProgressBar(disk_frame, path="C:\\", label="C Drive")
+        self.c_drive_bar.pack()
+
+        self.d_drive_bar = DiskProgressBar(disk_frame, path="C:\\", label="C Drive")
+        self.d_drive_bar.pack()
+
 
     def update_meters(self):
         # Update CPU meter
@@ -245,19 +484,6 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         self.ram_meter.draw_meter()
         self.ram_meter.draw_text()
         self.ram_meter.draw_labels()
-
-        # Update Disk meter
-        disk = psutil.disk_usage("C:\\")
-        disk_used = disk.used / (1024 ** 3)
-        disk_per = (disk_used / (disk.total / (1024 ** 3))) * 100
-        self.disk_meter.value = disk_used
-        self.disk_meter.per_value = disk_per
-        self.disk_meter.sublabel = f"{disk_used:.1f} GB Disk Used"
-        self.disk_meter.canvas.delete("all")
-        self.disk_meter.update_meter_color()
-        self.disk_meter.draw_meter()
-        self.disk_meter.draw_text()
-        self.disk_meter.draw_labels()
 
         # Schedule next update
         self.after(1000, self.update_meters)
