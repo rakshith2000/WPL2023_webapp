@@ -13,7 +13,7 @@ def get_linux_info(host, username, password=None, key_path=None):
         else:
             client.connect(hostname=host, username=username, password=password)
         
-        # Execute commands in one session for efficiency
+        # Execute commands in one session
         commands = """
         cat /etc/os-release | grep PRETTY_NAME;
         uname -r;
@@ -22,7 +22,7 @@ def get_linux_info(host, username, password=None, key_path=None):
         uptime -s;
         top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}';
         free -b | awk '/Mem:/{print $2, $3}';
-        df -B1 --output=source,size,used | grep -v tmpfs
+        df -B1 --exclude-type=tmpfs | awk 'NR>1 {print $1,$2,$3}'
         """
         stdin, stdout, stderr = client.exec_command(commands)
         output = stdout.read().decode().splitlines()
@@ -37,16 +37,20 @@ def get_linux_info(host, username, password=None, key_path=None):
         total_ram_gb = round(total_ram_bytes / (1024**3), 2)
         used_ram_gb = round(int(output[6].split()[1]) / (1024**3), 2)
         
-        # Parse disks
+        # Parse disks (skip header and invalid lines)
         disks = []
         for line in output[7:]:
-            if not line.strip(): continue
+            if not line.strip() or 'Filesystem' in line:
+                continue
             parts = line.split()
-            disks.append({
-                "disk": parts[0],
-                "total_gb": round(int(parts[1]) / (1024**3), 2),
-                "used_gb": round(int(parts[2]) / (1024**3), 2)
-            })
+            try:
+                disks.append({
+                    "disk": parts[0],
+                    "total_gb": round(int(parts[1]) / (1024**3), 2),
+                    "used_gb": round(int(parts[2]) / (1024**3), 2)
+                })
+            except (ValueError, IndexError):
+                continue
         
         return {
             "os_name": os_name,
