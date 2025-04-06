@@ -1,5 +1,6 @@
 import paramiko
 import re
+from datetime import datetime
 
 def get_linux_info(host, username, password=None, key_path=None):
     # Establish SSH connection
@@ -31,7 +32,7 @@ def get_linux_info(host, username, password=None, key_path=None):
         os_build = output[1].strip()
         cpu_cores = int(output[2])
         total_ram_bytes = int(output[3])
-        uptime_days = (pd.Timestamp.now() - pd.Timestamp(output[4])).days
+        uptime_days = (datetime.now() - datetime.strptime(output[4], "%Y-%m-%d %H:%M:%S")).days
         cpu_usage = float(output[5])
         total_ram_gb = round(total_ram_bytes / (1024**3), 2)
         used_ram_gb = round(int(output[6].split()[1]) / (1024**3), 2)
