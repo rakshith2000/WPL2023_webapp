@@ -1,47 +1,80 @@
-import socket
-import psutil
-import platform
-import wmi  # pip install wmi
+import winrm
+from pprint import pprint
 
-def get_system_info():
-    # Initialize WMI
-    c = wmi.WMI()
-    
-    # Get FQDN (Fully Qualified Domain Name)
-    fqdn = socket.getfqdn()
-    
-    # Get IP Address (primary)
-    ip_address = socket.gethostbyname(socket.gethostname())
-    
-    # Get OS information using platform
-    os_name = platform.system()
-    os_build = platform.version()
-    
-    # Alternative OS info using WMI (more detailed for Windows)
-    try:
-        for os in c.Win32_OperatingSystem():
-            os_name = os.Caption
-            os_build = os.BuildNumber
-            break
-    except:
-        pass
-    
-    # Get CPU cores (physical and logical)
-    cpu_cores = psutil.cpu_count(logical=False)  # physical cores
-    logical_cores = psutil.cpu_count(logical=True)  # logical cores
-    
-    # Get total RAM
-    total_ram = psutil.virtual_memory().total
-    total_ram_gb = round(total_ram / (1024 ** 3), 2)  # Convert to GB
-    
-    # Print all information
-    print(f"FQDN: {fqdn}")
-    print(f"IP Address: {ip_address}")
-    print(f"OS Name: {os_name}")
-    print(f"OS Build: {os_build}")
-    print(f"Physical CPU Cores: {cpu_cores}")
-    print(f"Logical CPU Cores: {logical_cores}")
-    print(f"Total RAM: {total_ram_gb} GB")
+# Create session
+session = winrm.Session(
+    'remote-pc',  # Replace with remote computer name/IP
+    auth=('username', 'password'),
+    transport='ntlm'  # or 'kerberos' if in domain
+)
 
-if __name__ == "__main__":
-    get_system_info()
+def run_ps_command(command):
+    result = session.run_ps(command)
+    if result.status_code != 0:
+        raise Exception(f"PS command failed: {result.std_err.decode()}")
+    return result.std_out.decode().strip()
+
+# Get OS information
+os_info = run_ps_command('''
+    $os = Get-CimInstance Win32_OperatingSystem
+    [PSCustomObject]@{
+        OSName = $os.Caption
+        OSVersion = $os.Version
+        BuildNumber = $os.BuildNumber
+        LastBootTime = $os.LastBootUpTime
+    } | ConvertTo-Json
+''')
+
+# Get CPU information
+cpu_info = run_ps_command('''
+    $cpu = Get-CimInstance Win32_Processor
+    $cores = $cpu | Measure-Object -Property NumberOfCores -Sum | Select-Object -ExpandProperty Sum
+    $threads = $cpu | Measure-Object -Property NumberOfLogicalProcessors -Sum | Select-Object -ExpandProperty Sum
+    
+    [PSCustomObject]@{
+        CPUName = $cpu.Name[0]
+        PhysicalCores = $cores
+        LogicalCores = $threads
+        CurrentLoad = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select-Object -ExpandProperty Average)
+    } | ConvertTo-Json
+''')
+
+# Get memory information
+memory_info = run_ps_command('''
+    $mem = Get-CimInstance Win32_OperatingSystem
+    $total_physical = [math]::Round($mem.TotalVisibleMemorySize/1MB, 2)
+    $free_physical = [math]::Round($mem.FreePhysicalMemory/1MB, 2)
+    $used_physical = $total_physical - $free_physical
+    
+    [PSCustomObject]@{
+        TotalGB = $total_physical
+        FreeGB = $free_physical
+        UsedGB = $used_physical
+        UsagePercent = [math]::Round(($used_physical/$total_physical)*100, 2)
+    } | ConvertTo-Json
+''')
+
+# Get disk information
+disk_info = run_ps_command('''
+    Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | ForEach-Object {
+        [PSCustomObject]@{
+            Drive = $_.DeviceID
+            SizeGB = [math]::Round($_.Size/1GB, 2)
+            FreeGB = [math]::Round($_.FreeSpace/1GB, 2)
+            UsedGB = [math]::Round(($_.Size - $_.FreeSpace)/1GB, 2)
+            UsagePercent = [math]::Round((($_.Size - $_.FreeSpace)/$_.Size)*100, 2)
+        }
+    } | ConvertTo-Json
+''')
+
+# Parse and display results
+import json
+
+system_info = {
+    "os_info": json.loads(os_info),
+    "cpu_info": json.loads(cpu_info),
+    "memory_info": json.loads(memory_info),
+    "disk_info": json.loads(disk_info)
+}
+
+pprint(system_info)
