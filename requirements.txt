@@ -539,4 +539,231 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         )
         self.loading_label.pack(expand=True)
 
-    def handle_m
+    def handle_metrics_result(self, success, server, server_type):
+        self.loading_label.destroy()
+        self.get_metrics_btn.config(state="normal")
+        
+        if not success:
+            self.show_error(f"Failed to connect to {server}")
+            return
+        
+        self.current_server = server
+        self.server_type = server_type
+        self.create_server_content()
+
+    def show_error(self, message):
+        ttkb.Label(
+            self.content_frame,
+            text=message,
+            font=("Helvetica", 14),
+            bootstyle=DANGER
+        ).pack(expand=True)
+        self.get_metrics_btn.config(state="normal")
+
+    def create_server_content(self):
+        content_container = ttkb.Frame(self.content_frame)
+        content_container.pack(side="top",fill="both", expand=True, padx=10, pady=10)
+
+        sysinfo_frame = ttkb.LabelFrame(
+            content_container,
+            text="System Information",
+            bootstyle="cosmo",
+            padding=10,
+            width=300
+        )
+        sysinfo_frame.pack(side="left", fill="y", padx=(0, 20))
+
+        if self.server_type == "Windows":
+            sys_info = [
+                ("Server Name:", socket.getfqdn(self.current_server)),
+                ("IP Address:", socket.gethostbyname(self.current_server)),
+                ("Operating System:", self.os_info.Caption.strip('Microsoft').strip()),
+                ("OS Build Version:", self.os_info.BuildNumber),
+                ("CPU Cores:", self.processor_info.NumberOfLogicalProcessors),
+                ("Total RAM:", f"{round(int(self.computer_system_info.TotalPhysicalMemory) / (1024 ** 3))} GB")
+            ]
+        else:
+            sys_info = [
+                ("Server Name:", socket.getfqdn(self.current_server)),
+                ("IP Address:", socket.gethostbyname(self.current_server)),
+                ("Operating System:", self.os_info['Caption']),
+                ("OS Build Version:", self.os_info['BuildNumber']),
+                ("CPU Cores:", self.processor_info['NumberOfLogicalProcessors']),
+                ("Total RAM:", f"{self.computer_system_info['TotalPhysicalMemory']} GB")
+            ]
+
+        for i, (key, value) in enumerate(sys_info):
+            ttkb.Label(
+                sysinfo_frame,
+                text=key,
+                font=("Microsoft Sans Serif", 10, "bold"),
+                foreground="#888888",
+                anchor="w"
+            ).pack(fill="x", pady=(5, 0))
+
+            ttkb.Label(
+                sysinfo_frame,
+                text=f"    {value}",
+                font=("Cambria", 12, "bold"),
+                foreground="#333333",
+                anchor="w"
+            ).pack(fill="x", pady=(0, 5))
+
+        conn_frame = ttkb.LabelFrame(
+            content_container,
+            text="System Connectivity",
+            bootstyle="cosmo",
+            padding=10,
+            width=250
+        )
+        conn_frame.pack(side="top", fill="x", padx=(0, 0), pady=(0, 10), anchor="n", expand=False)
+
+        status_frame = ttkb.Frame(conn_frame)
+        status_frame.pack(fill="x", pady=7)
+
+        def get_ping_status(server):
+            res = subprocess.run(['ping','-n','2',server], capture_output=True, text=True)
+            return res.returncode == 0
+
+        ping_frame = ttkb.Frame(status_frame)
+        ping_frame.pack(side="left", expand=True)
+        ping_st = get_ping_status(self.current_server)
+        ttkb.Label(ping_frame, text="Ping Status:", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+        self.ping_status = ttkb.Label(
+            ping_frame,
+            text="Success" if ping_st else "Failure",
+            font=("Cambria", 12, "bold"),
+            foreground="green" if ping_st else "red",
+            relief="solid",
+            borderwidth=1,
+            padding=5
+        )
+        self.ping_status.pack(pady=5)
+
+        def check_port_connectivity(server, port):
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            try:
+                result = sock.connect_ex((server, port))
+                sock.close()
+                return result == 0
+            except Exception:
+                return False
+
+        if self.server_type == "Windows":
+            rdp_frame = ttkb.Frame(status_frame)
+            rdp_frame.pack(side="left", expand=True)
+            rdp_st = check_port_connectivity(self.current_server, 3389)
+            ttkb.Label(rdp_frame, text="RDP Connection:", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+            self.rdp_status = ttkb.Label(
+                rdp_frame,
+                text="Success" if rdp_st else "Failure",
+                font=("Cambria", 12, "bold"),
+                foreground="green" if rdp_st else "red",
+                relief="solid",
+                borderwidth=1,
+                padding=5
+            )
+            self.rdp_status.pack(pady=5)
+        else:
+            ssh_frame = ttkb.Frame(status_frame)
+            ssh_frame.pack(side="left", expand=True)
+            ssh_st = check_port_connectivity(self.current_server, 22)
+            ttkb.Label(ssh_frame, text="SSH Connection:", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+            self.ssh_status = ttkb.Label(
+                ssh_frame,
+                text="Success" if ssh_st else "Failure",
+                font=("Cambria", 12, "bold"),
+                foreground="green" if ssh_st else "red",
+                relief="solid",
+                borderwidth=1,
+                padding=5
+            )
+            self.ssh_status.pack(pady=5)
+
+        uptime_frame = ttkb.Frame(status_frame)
+        uptime_frame.pack(side="left", expand=True)
+        if self.server_type == "Windows":
+            last_boot = datetime.strptime(self.os_info.LastBootUpTime.split('.')[0], '%Y%m%d%H%M%S')
+            self.uptime = datetime.now() - last_boot
+            self.uptimeinDays = self.uptime.days
+        else:
+            self.uptimeinDays = self.os_info['Uptime']
+        ttkb.Label(uptime_frame, text="Server Uptime:", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+        self.uptime_status = ttkb.Label(
+            uptime_frame,
+            text=f"{self.uptimeinDays} Days",
+            font=("Cambria", 12, "bold"),
+            relief="solid",
+            borderwidth=1,
+            padding=5
+        )
+        self.uptime_status.pack(pady=5)
+
+        perf_frame = ttkb.LabelFrame(
+            content_container,
+            text="System Performance",
+            bootstyle="cosmo",
+            padding=10
+        )
+        perf_frame.pack(side="top", fill="x", expand=False, pady=(0, 5))
+
+        cpu_frame = ttkb.Frame(perf_frame)
+        cpu_frame.pack(side="left", expand=True, padx=10)
+
+        ttkb.Label(cpu_frame, text="CPU Usage", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+        self.cpu_meter = CPUSemiCircularMeter(cpu_frame, conn=self.processor_info, server_type=self.server_type)
+        self.cpu_meter.pack()
+
+        ram_frame = ttkb.Frame(perf_frame)
+        ram_frame.pack(side="left", expand=True, padx=10)
+
+        ttkb.Label(ram_frame, text="RAM Usage", font=("Microsoft Sans Serif", 10, "bold"), foreground="grey").pack()
+        self.ram_meter = StorageSemiCircularMeter(ram_frame, label="RAM", conn=self.os_info, server_type=self.server_type)
+        self.ram_meter.pack()
+
+        disk_frame = ttkb.LabelFrame(
+            content_container,
+            text="Disk Performance",
+            bootstyle="cosmo",
+            padding=10
+        )
+        disk_frame.pack(side="top", fill="x", expand=False, pady=(0, 10))
+
+        if self.server_type == "Windows":
+            available_disks = [disk.DeviceID for disk in self.disks_info]
+            for drive in available_disks:
+                if drive == "C:":
+                    self.c_drive_bar = DiskProgressBar(
+                        disk_frame, 
+                        server_type=self.server_type, 
+                        path="C:", 
+                        conn=self.disks_info, 
+                        label="C: Drive"
+                    )
+                    self.c_drive_bar.pack()
+                elif drive == "D:":
+                    self.d_drive_bar = DiskProgressBar(
+                        disk_frame, 
+                        server_type=self.server_type, 
+                        path="D:", 
+                        conn=self.disks_info, 
+                        label="D: Drive"
+                    )
+                    self.d_drive_bar.pack()
+        else:
+            if self.disks_info and len(self.disks_info) > 0:
+                self.disk_bar = DiskProgressBar(
+                    disk_frame, 
+                    server_type=self.server_type, 
+                    path=self.disks_info[0]['mount'], 
+                    conn=self.disks_info[0], 
+                    label="Root Partition"
+                )
+                self.disk_bar.pack()
+
+if __name__ == '__main__':
+    app = ttkb.Window("Health Check Dashboard", "yeti")
+    app.state('zoomed')
+    dashboard = SystemHealthCheckDashboard(app)
+    app.mainloop()
