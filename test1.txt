@@ -1,27 +1,15 @@
-import wmi
+import subprocess
 
-def get_cpu_info_fast(server, username, password):
-    try:
-        # Connect with explicit timeout settings
-        connection = wmi.WMI(
-            computer=server,
-            user=username,
-            password=password,
-            timeout=3  # Set connection timeout
-        )
-        
-        # Query only specific properties you need
-        cpu_info = connection.Win32_Processor(
-            fields=["Name", "NumberOfCores", "NumberOfLogicalProcessors", "MaxClockSpeed", "LoadPercentage"]
-        )
-        
-        return [{
-            'Name': cpu.Name,
-            'Cores': cpu.NumberOfCores,
-            'Threads': cpu.NumberOfLogicalProcessors,
-            'MaxSpeed': cpu.MaxClockSpeed,
-            'Load': cpu.LoadPercentage
-        } for cpu in cpu_info]
-    
-    except Exception as e:
-        return {"error": str(e)}
+def get_cpu_ps_remote(server):
+    ps_script = """
+    Get-CimInstance Win32_Processor | 
+    Select-Object Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed |
+    ConvertTo-Json
+    """
+    cmd = [
+        "powershell",
+        "-Command",
+        f"Invoke-Command -ComputerName {server} -ScriptBlock {{{ps_script}}}"
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.stdout
