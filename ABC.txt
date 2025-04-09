@@ -232,20 +232,49 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         self.figures = []
         self.axes = []
         
-        # Create 2 plots (CPU - vertical bar, RAM - horizontal bar)
-        for i in range(2):
-            fig, ax = plt.subplots(figsize=(9, 3))
-            self.figures.append(fig)
-            self.axes.append(ax)
-            
-            canvas = FigureCanvasTkAgg(fig, master=self.content_frame)
-            canvas.draw()
-            widget = canvas.get_tk_widget()
-            widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            self.canvases.append(canvas)
-            
-            if i < 1:  # Add separator between plots
-                ttkb.Separator(self.content_frame, orient='horizontal').pack(fill=tk.X, padx=10, pady=5)
+        # Create a container frame for the two server type frames
+        container_frame = ttkb.Frame(self.content_frame)
+        container_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create frames for Windows and Linux servers
+        windows_frame = ttkb.LabelFrame(container_frame, text="Windows Servers", bootstyle="info")
+        windows_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        linux_frame = ttkb.LabelFrame(container_frame, text="Linux Servers", bootstyle="danger")
+        linux_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Create plots for Windows servers
+        self.create_server_type_plots(windows_frame, "Windows")
+        
+        # Add separator
+        ttkb.Separator(self.content_frame, orient='horizontal').pack(fill=tk.X, padx=10, pady=5)
+        
+        # Create plots for Linux servers
+        self.create_server_type_plots(linux_frame, "Linux")
+        
+    def create_server_type_plots(self, parent_frame, server_type):
+        """Create CPU and RAM plots for a specific server type"""
+        # CPU Plot
+        fig_cpu, ax_cpu = plt.subplots(figsize=(8, 3))
+        self.figures.append(fig_cpu)
+        self.axes.append(ax_cpu)
+        
+        canvas_cpu = FigureCanvasTkAgg(fig_cpu, master=parent_frame)
+        canvas_cpu.draw()
+        widget_cpu = canvas_cpu.get_tk_widget()
+        widget_cpu.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.canvases.append(canvas_cpu)
+        
+        # RAM Plot
+        fig_ram, ax_ram = plt.subplots(figsize=(8, 3))
+        self.figures.append(fig_ram)
+        self.axes.append(ax_ram)
+        
+        canvas_ram = FigureCanvasTkAgg(fig_ram, master=parent_frame)
+        canvas_ram.draw()
+        widget_ram = canvas_ram.get_tk_widget()
+        widget_ram.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.canvases.append(canvas_ram)
 
     def get_colors(self, values):
         """Determine bar colors based on percentage"""
@@ -261,37 +290,68 @@ class SystemHealthCheckDashboard(ttkb.Frame):
 
     def update_plots_with_metrics(self):
         """Update all plots with actual metrics data"""
-        # Prepare data from collected metrics
-        servers = []
-        cpu_usage = []
-        ram_usage = []
+        # Separate Windows and Linux servers
+        windows_servers = []
+        windows_cpu = []
+        windows_ram = []
+        
+        linux_servers = []
+        linux_cpu = []
+        linux_ram = []
         
         for server, metrics in self.server_details.items():
-            servers.append(server)
-            cpu_usage.append(metrics['cpu_usage'])
-            ram_usage.append(metrics['ram_usage'])
+            if self.server_credentials[server]["type"] == "Windows":
+                windows_servers.append(server)
+                windows_cpu.append(metrics['cpu_usage'])
+                windows_ram.append(metrics['ram_usage'])
+            else:
+                linux_servers.append(server)
+                linux_cpu.append(metrics['cpu_usage'])
+                linux_ram.append(metrics['ram_usage'])
         
         # Clear previous plots
         for ax in self.axes:
             ax.clear()
         
-        # 1. CPU Usage Plot (Vertical Bar)
-        cpu_colors = self.get_colors(cpu_usage)
-        self.axes[0].barh(servers, cpu_usage, color=cpu_colors, edgecolor='white', linewidth=0.5)
-        self.axes[0].set_title("CPU Usage (%)", fontweight="bold")
-        self.axes[0].set_xlim(0, 100)
-        self.axes[0].grid(axis='x', linestyle='--', alpha=0.7)
-        for i, val in enumerate(cpu_usage):
-            self.axes[0].text(val + 1, i, f"{val}%", va='center')
+        # Update Windows server plots (first two axes)
+        if windows_servers:
+            # CPU Usage Plot (Vertical Bar)
+            cpu_colors = self.get_colors(windows_cpu)
+            self.axes[0].barh(windows_servers, windows_cpu, color=cpu_colors, edgecolor='white', linewidth=0.5)
+            self.axes[0].set_title("Windows CPU Usage (%)", fontweight="bold")
+            self.axes[0].set_xlim(0, 100)
+            self.axes[0].grid(axis='x', linestyle='--', alpha=0.7)
+            for i, val in enumerate(windows_cpu):
+                self.axes[0].text(val + 1, i, f"{val}%", va='center')
 
-        # 2. RAM Usage Plot (Horizontal Bar)
-        ram_colors = self.get_colors(ram_usage)
-        self.axes[1].barh(servers, ram_usage, color=ram_colors, edgecolor='white', linewidth=0.5)
-        self.axes[1].set_title("RAM Usage (%)", fontweight="bold")
-        self.axes[1].set_xlim(0, 100)
-        self.axes[1].grid(axis='x', linestyle='--', alpha=0.7)
-        for i, val in enumerate(ram_usage):
-            self.axes[1].text(val + 1, i, f"{val}%", va='center')
+            # RAM Usage Plot (Horizontal Bar)
+            ram_colors = self.get_colors(windows_ram)
+            self.axes[1].barh(windows_servers, windows_ram, color=ram_colors, edgecolor='white', linewidth=0.5)
+            self.axes[1].set_title("Windows RAM Usage (%)", fontweight="bold")
+            self.axes[1].set_xlim(0, 100)
+            self.axes[1].grid(axis='x', linestyle='--', alpha=0.7)
+            for i, val in enumerate(windows_ram):
+                self.axes[1].text(val + 1, i, f"{val}%", va='center')
+        
+        # Update Linux server plots (next two axes)
+        if linux_servers:
+            # CPU Usage Plot (Vertical Bar)
+            cpu_colors = self.get_colors(linux_cpu)
+            self.axes[2].barh(linux_servers, linux_cpu, color=cpu_colors, edgecolor='white', linewidth=0.5)
+            self.axes[2].set_title("Linux CPU Usage (%)", fontweight="bold")
+            self.axes[2].set_xlim(0, 100)
+            self.axes[2].grid(axis='x', linestyle='--', alpha=0.7)
+            for i, val in enumerate(linux_cpu):
+                self.axes[2].text(val + 1, i, f"{val}%", va='center')
+
+            # RAM Usage Plot (Horizontal Bar)
+            ram_colors = self.get_colors(linux_ram)
+            self.axes[3].barh(linux_servers, linux_ram, color=ram_colors, edgecolor='white', linewidth=0.5)
+            self.axes[3].set_title("Linux RAM Usage (%)", fontweight="bold")
+            self.axes[3].set_xlim(0, 100)
+            self.axes[3].grid(axis='x', linestyle='--', alpha=0.7)
+            for i, val in enumerate(linux_ram):
+                self.axes[3].text(val + 1, i, f"{val}%", va='center')
 
         # Redraw all canvases
         for canvas in self.canvases:
