@@ -1,18 +1,9 @@
-Error getting Wind
-d.', None, None)>
-Error getting Wind
-d.', None, None)>
-Error getting Wind
-d.', None, None)>
-Error getting Wind
-d.', None, None)>
-Error getting Wind
-d.', None, None)>
-Error getting Wind
-d.', None, None)>
-Error getting Wind
-.', None, None)>
-Error getting Wind
-.', None, None)>
-Error getting Wind
-.', None, None)>
+Error getting Windows metrics for USWIW1489: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
+Error getting Windows metrics for USWIW1531: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
+Error getting Windows metrics for USWIW1533: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
+Error getting Windows metrics for USWIW1492: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
+Error getting Windows metrics for USWIW1490: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
+Error getting Windows metrics for USWIW1530: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
+Error getting Windows metrics for USWIW716: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
+Error getting Windows metrics for USWIW714: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
+Error getting Windows metrics for USWIW715: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
