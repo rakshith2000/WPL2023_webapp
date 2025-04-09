@@ -277,17 +277,16 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         
         # 1. CPU Usage Plot (Vertical Bar)
         cpu_colors = self.get_colors(cpu_usage)
-        self.axes[0].bar(servers, cpu_usage, color=cpu_colors)
+        self.axes[0].barh(servers, cpu_usage, color=cpu_colors, edgecolor='white', linewidth=0.5)
         self.axes[0].set_title("CPU Usage (%)", fontweight="bold")
-        self.axes[0].set_ylim(0, 100)
-        self.axes[0].grid(axis='y', linestyle='--', alpha=0.7)
-        self.axes[0].tick_params(axis='x', rotation=45)
+        self.axes[0].set_xlim(0, 100)
+        self.axes[0].grid(axis='x', linestyle='--', alpha=0.7)
         for i, val in enumerate(cpu_usage):
-            self.axes[0].text(i, val + 2, f"{val}%", ha='center')
+            self.axes[0].text(val + 1, i, f"{val}%", va='center')
 
         # 2. RAM Usage Plot (Horizontal Bar)
         ram_colors = self.get_colors(ram_usage)
-        self.axes[1].barh(servers, ram_usage, color=ram_colors)
+        self.axes[1].barh(servers, ram_usage, color=ram_colors, edgecolor='white', linewidth=0.5)
         self.axes[1].set_title("RAM Usage (%)", fontweight="bold")
         self.axes[1].set_xlim(0, 100)
         self.axes[1].grid(axis='x', linestyle='--', alpha=0.7)
