@@ -130,7 +130,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             bootstyle="success",
             style="Get.TButton",
             width=15,
-            command=self.update_all_metrics
+            command=self.start_metrics_thread
         )
         self.get_metrics_btn.pack(pady=(0, 10))
         
@@ -148,7 +148,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             bootstyle=INFO
         )
         self.loading_label.pack(expand=True)
-        
+
     def check_rdp_connectivity(self, server, port=3389):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(5)
@@ -198,7 +198,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             free_ram = int(conn.Win32_OperatingSystem()[0].FreePhysicalMemory) * 1024
             metrics['ram_usage'] = round(((total_ram - free_ram) / total_ram) * 100, 1)
             
-            # Drive Usage (C: and D:)
+            # Disk usage for C: and D:
             drives = conn.Win32_LogicalDisk(DriveType=3)
             for drive in drives:
                 if drive.DeviceID == "C:":
@@ -214,27 +214,14 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         
         return {server: metrics}
 
-    def get_linux_metrics(self, server, credentials):
-        metrics = {
-            'ping': False,
-            'rdp': False,
-            'cpu_usage': 0,
-            'ram_usage': 0,
-            'C_drive': 0,
-            'D_drive': 0,
-            'status': 'offline'
-        }
-        # Linux metrics collection (similar logic, using paramiko or other tools)
-        return {server: metrics}
+    def start_metrics_thread(self):
+        # Start a new thread for fetching metrics to avoid blocking the GUI
+        server = self.server_var.get()
+        if server:
+            thread = threading.Thread(target=self.update_all_metrics, args=(server,))
+            thread.start()
 
-    def get_metrics_worker(self, server, credentials):
-        if credentials["type"] == "Windows":
-            result = self.get_windows_metrics(server, credentials)
-        elif credentials["type"] == "Linux":
-            result = self.get_linux_metrics(server, credentials)
-        self.result_queue.put(result)
-        
-    def update_all_metrics(self):
+    def update_all_metrics(self, server):
         self.loading_label.config(text="Collecting metrics for all servers...")
         self.update()
         
