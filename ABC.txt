@@ -14,10 +14,10 @@ class SystemHealthCheckDashboard(ttkb.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.pack(fill="both", expand=True)
-        user1 = "user1" #Windows 6 servers
+        user1 = "user1" # Windows servers credentials
         password1 = "c3hbihbu99b^*(bjbjb3v"
         
-        user2 = "user2" #Linux servers
+        user2 = "user2" # Linux servers credentials
         password2 = "Mhgvhgco&frr$Bt1"
         
         self.server_credentials = {
@@ -43,12 +43,6 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         self.create_left_pane()
         self.create_main_area()
         
-        self.current_server = None
-        self.wmi_conn = None
-        self.os_info = None
-        self.processor_info = None
-        self.disks_info = None
-        self.computer_system_info = None
         self.server_details = {}  # To store collected metrics
 
     def create_header(self):
@@ -67,35 +61,19 @@ class SystemHealthCheckDashboard(ttkb.Frame):
     def create_left_pane(self):
         style = ttkb.Style()
         style.configure('Overview.TButton', font=('Calibri', 14, 'bold'))
-        style.configure('Get.TButton', font=('Microsoft Sans Serif', 10, 'bold'), 
-                       foreground='white', background='#28a745', bordercolor='#28a745', 
-                       darkcolor='#28a745', lightcolor='#28a745', relief='raised', anchor='center')
-        style.configure('custom.TLabelframe', bordercolor='#6c757d', background=style.colors.light)
-        style.configure('custom.TLabelframe.Label',
-                      font=('Calibri', 14, 'bold'),
-                      foreground='#343a40',
-                      padding=10, background=style.colors.light)
-
-        self.left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)
-        self.left_pane.grid(row=1, column=0, sticky="ns")
-        self.left_pane.grid_propagate(False)
+        
+        left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)
+        left_pane.grid(row=1, column=0, sticky="ns")
+        left_pane.grid_propagate(False)
 
         self.overview_btn = ttkb.Button(
-            self.left_pane,
+            left_pane,
             text="JDA Overview",
             bootstyle="success",
             style='Overview.TButton',
-            command=self.show_overview
+            command=self.start_metrics_collection_thread
         )
         self.overview_btn.pack(fill="x", pady=(0, 20))
-    
-    def clear_left_pane(self):
-        for widget in self.left_pane.winfo_children():
-            widget.destroy()
-
-    def show_overview(self):
-        self.clear_left_pane()
-        self.start_metrics_collection_thread()
         
     def create_main_area(self):
         self.main_area = ttkb.Frame(self, padding=(10, 10, 10, 10))
@@ -106,7 +84,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         
         self.loading_label = ttkb.Label(
             self.content_frame,
-            text="Select a server and click 'Get Metrics'",
+            text="Click 'JDA Overview' to fetch server metrics",
             font=("Calibri", 14, "bold"),
             bootstyle=INFO
         )
@@ -197,12 +175,15 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         
     def start_metrics_collection_thread(self):
         """Start a thread to collect metrics."""
-        self.server_details = {}  # Clear previous metrics
+        self.overview_btn.config(state="disabled")
         threading.Thread(target=self.update_all_metrics).start()
 
     def update_all_metrics(self):
         self.loading_label.config(text="Collecting metrics for all servers...")
         self.update()
+        
+        # Clear previous metrics
+        self.server_details = {}
         
         # Use ThreadPoolExecutor to fetch metrics in parallel in a worker thread
         self.result_queue = Queue()
@@ -227,6 +208,8 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                 self.after(100, self.check_metrics_queue)
         except Exception as e:
             print(f"Error while processing metrics: {e}")
+        finally:
+            self.overview_btn.config(state="normal")
 
     def update_gui_after_metrics(self):
         self.loading_label.config(text="Metrics collection complete!")
