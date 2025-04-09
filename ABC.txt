@@ -14,10 +14,10 @@ class SystemHealthCheckDashboard(ttkb.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.pack(fill="both", expand=True)
-        user1 = "user1" # Windows servers credentials
+        user1 = "user1" #Windows 6 servers
         password1 = "c3hbihbu99b^*(bjbjb3v"
         
-        user2 = "user2" # Linux servers credentials
+        user2 = "user2" #Linux servers
         password2 = "Mhgvhgco&frr$Bt1"
         
         self.server_credentials = {
@@ -76,63 +76,26 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                       foreground='#343a40',
                       padding=10, background=style.colors.light)
 
-        left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)
-        left_pane.grid(row=1, column=0, sticky="ns")
-        left_pane.grid_propagate(False)
+        self.left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)
+        self.left_pane.grid(row=1, column=0, sticky="ns")
+        self.left_pane.grid_propagate(False)
 
-        overview_btn = ttkb.Button(
-            left_pane,
+        self.overview_btn = ttkb.Button(
+            self.left_pane,
             text="JDA Overview",
             bootstyle="success",
             style='Overview.TButton',
+            command=self.show_overview
         )
-        overview_btn.pack(fill="x", pady=(0, 20))
+        self.overview_btn.pack(fill="x", pady=(0, 20))
+    
+    def clear_left_pane(self):
+        for widget in self.left_pane.winfo_children():
+            widget.destroy()
 
-        separator = ttkb.Separator(left_pane, bootstyle=SECONDARY)
-        separator.pack(fill="x", pady=(0, 20))
-
-        server_frame = ttkb.LabelFrame(
-            left_pane,
-            text="Select Server",
-            bootstyle="info",
-            style='custom.TLabelframe',
-            labelanchor="nw"
-        )
-        server_frame.pack(fill="x", pady=(0, 10))
-
-        self.server_var = ttkb.StringVar(value="Select Server")
-        server_menu_btn = ttkb.Menubutton(
-            server_frame,
-            textvariable=self.server_var,
-            bootstyle="primary-outline",
-            width=18
-        )
-        server_menu_btn.pack(fill="x", padx=5, pady=(10, 10))
-
-        menu = tk.Menu(server_menu_btn, tearoff=1)
-        server_menu_btn["menu"] = menu
-        menu.delete(0)
-        menu.add_command(label="Windows Servers", state="disabled", font=("Calibri", 10, "bold"))
-        win_servers = [server for server, details in self.server_credentials.items() if details["type"] == "Windows"]
-        for server in win_servers:
-            menu.add_radiobutton(label=f"    {server}", variable=self.server_var, value=server)
-            
-        menu.add_separator()
-        
-        menu.add_command(label="Linux Servers", state="disabled", font=("Calibri", 10, "bold"))
-        lin_servers = [server for server, details in self.server_credentials.items() if details["type"] == "Linux"]
-        for server in lin_servers:
-            menu.add_radiobutton(label=f"    {server}", variable=self.server_var, value=server)
-
-        self.get_metrics_btn = ttkb.Button(
-            server_frame,
-            text="Get Metrics",
-            bootstyle="success",
-            style="Get.TButton",
-            width=15,
-            command=self.start_metrics_collection_thread
-        )
-        self.get_metrics_btn.pack(pady=(0, 10))
+    def show_overview(self):
+        self.clear_left_pane()
+        self.start_metrics_collection_thread()
         
     def create_main_area(self):
         self.main_area = ttkb.Frame(self, padding=(10, 10, 10, 10))
@@ -234,6 +197,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         
     def start_metrics_collection_thread(self):
         """Start a thread to collect metrics."""
+        self.server_details = {}  # Clear previous metrics
         threading.Thread(target=self.update_all_metrics).start()
 
     def update_all_metrics(self):
