@@ -7,7 +7,8 @@ import psutil, wmi, socket, platform, subprocess, paramiko, re
 from datetime import datetime
 import threading
 from queue import Queue
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
+import pythoncom  # Import pythoncom for COM initialization
 
 class SystemHealthCheckDashboard(ttkb.Frame):
     def __init__(self, master):
@@ -170,6 +171,8 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         }
         
         try:
+            pythoncom.CoInitialize()  # Initialize COM for this thread
+
             # Check ping
             ping_result = subprocess.run(['ping', '-n', '2', server], 
                                        capture_output=True, 
@@ -195,16 +198,19 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             free_ram = int(conn.Win32_OperatingSystem()[0].FreePhysicalMemory) * 1024
             metrics['ram_usage'] = round(((total_ram - free_ram) / total_ram) * 100, 1)
             
-            # Disk Usage
-            for disk in conn.Win32_LogicalDisk():
-                if disk.DeviceID == 'C:':
-                    metrics['C_drive'] = round((1 - (int(disk.FreeSpace) / int(disk.Size))) * 100, 1)
-                elif disk.DeviceID == 'D:':
-                    metrics['D_drive'] = round((1 - (int(disk.FreeSpace) / int(disk.Size))) * 100, 1)
+            # Drive Usage (C: and D:)
+            drives = conn.Win32_LogicalDisk(DriveType=3)
+            for drive in drives:
+                if drive.DeviceID == "C:":
+                    metrics['C_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
+                elif drive.DeviceID == "D:":
+                    metrics['D_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
             
             metrics['status'] = 'online'
         except Exception as e:
             print(f"Error getting metrics for {server}: {e}")
+        finally:
+            pythoncom.CoUninitialize()  # Clean up COM for this thread
         
         return {server: metrics}
 
