@@ -14,11 +14,11 @@ class SystemHealthCheckDashboard(ttkb.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.pack(fill="both", expand=True)
-        user1 = "user1" # Windows servers credentials
-        password1 = "c3hbihbu99b^*(bjbjb3v"
+        user1 = "kosv1106" #Windows 6 servers
+        password1 = "c3RM21nvPx2&%32fsp93v"
         
-        user2 = "user2" # Linux servers credentials
-        password2 = "Mhgvhgco&frr$Bt1"
+        user2 = "kosv1388" #Linux servers
+        password2 = "M7!k28p&c30tyBt1"
         
         self.server_credentials = {
             "USWIW1489": {"type": "Windows", "user": user1, "password": password1},
@@ -179,8 +179,8 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         threading.Thread(target=self.update_all_metrics).start()
 
     def update_all_metrics(self):
-        self.loading_label.config(text="Collecting metrics for all servers...")
-        self.update()
+        #self.loading_label.config(text="Collecting metrics for all servers...")
+        #self.update()
         
         # Clear previous metrics
         self.server_details = {}
@@ -212,7 +212,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             self.overview_btn.config(state="normal")
 
     def update_gui_after_metrics(self):
-        self.loading_label.config(text="Metrics collection complete!")
+        #self.loading_label.config(text="Metrics collection complete!")
         self.display_metrics()
 
     def display_metrics(self):
