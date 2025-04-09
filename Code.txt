@@ -2,33 +2,34 @@ import ttkbootstrap as ttkb
 from ttkbootstrap.constants import *
 from ttkbootstrap.style import Style
 from ttkbootstrap.scrolled import ScrolledFrame
-import tkinter as tk  # Needed for tk.Menu
+import tkinter as tk
 import psutil, wmi, socket, platform, subprocess, paramiko, re
 from datetime import datetime
 import threading
 from queue import Queue
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class SystemHealthCheckDashboard(ttkb.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.pack(fill="both", expand=True)
-        user1 = "kosv1106" #Windows 6 servers
-        password1 = "c3RM21nvPx2&%32fsp93v"
+        user1 = "user1" #Windows 6 servers
+        password1 = "c3hbihbu99b^*(bjbjb3v"
         
-        user2 = "kosv1388" #Linux servers
-        password2 = "M7!k28p&c30tyBt1"
+        user2 = "user2" #Linux servers
+        password2 = "Mhgvhgco&frr$Bt1"
         
         self.server_credentials = {
-            "USWIW1489" : {"type": "Windows", "user": user1, "password": password1},
-            "USWIW1490" : {"type": "Windows", "user": user1, "password": password1},
-            "USWIW1492" : {"type": "Windows", "user": user1, "password": password1},
-            "USWIW1530" : {"type": "Windows", "user": user1, "password": password1},
-            "USWIW1531" : {"type": "Windows", "user": user1, "password": password1},
-            "USWIW1533" : {"type": "Windows", "user": user1, "password": password1},
-            "USWIW714" : {"type": "Windows", "user": user1, "password": password1},
-            "USWIW715" : {"type": "Windows", "user": user1, "password": password1},
-            "USWIW716" : {"type": "Windows", "user": user1, "password": password1},
-            "USWIX733" : {"type": "Linux", "user": user2, "password": password2},
+            "USWIW1489": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1490": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1492": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1530": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1531": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1533": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW714": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW715": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW716": {"type": "Windows", "user": user1, "password": password1},
+            "USWIX733": {"type": "Linux", "user": user2, "password": password2},
         }
 
         # Configure grid layout
@@ -47,6 +48,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         self.processor_info = None
         self.disks_info = None
         self.computer_system_info = None
+        self.server_details = {}  # To store collected metrics
 
     def create_header(self):
         header_frame = ttkb.Frame(self, padding=10, bootstyle=PRIMARY)
@@ -62,23 +64,21 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         header_lbl.pack(fill="x", expand=True)
 
     def create_left_pane(self):
-        # Create custom styles
         style = ttkb.Style()
         style.configure('Overview.TButton', font=('Calibri', 14, 'bold'))
-        style.configure('Get.TButton', font=('Microsoft Sans Serif', 10, 'bold'), foreground='white',
-                        background='#28a745', bordercolor='#28a745', darkcolor='#28a745', lightcolor='#28a745',
-                        relief='raised', anchor='center')
+        style.configure('Get.TButton', font=('Microsoft Sans Serif', 10, 'bold'), 
+                       foreground='white', background='#28a745', bordercolor='#28a745', 
+                       darkcolor='#28a745', lightcolor='#28a745', relief='raised', anchor='center')
         style.configure('custom.TLabelframe', bordercolor='#6c757d', background=style.colors.light)
         style.configure('custom.TLabelframe.Label',
-                        font=('Calibri', 14, 'bold'),
-                        foreground='#343a40',
-                        padding=10, background=style.colors.light)
+                      font=('Calibri', 14, 'bold'),
+                      foreground='#343a40',
+                      padding=10, background=style.colors.light)
 
         left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)
         left_pane.grid(row=1, column=0, sticky="ns")
         left_pane.grid_propagate(False)
 
-        # Overview button
         overview_btn = ttkb.Button(
             left_pane,
             text="JDA Overview",
@@ -90,7 +90,6 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         separator = ttkb.Separator(left_pane, bootstyle=SECONDARY)
         separator.pack(fill="x", pady=(0, 20))
 
-        # Server selection frame with custom styling
         server_frame = ttkb.LabelFrame(
             left_pane,
             text="Select Server",
@@ -100,7 +99,6 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         )
         server_frame.pack(fill="x", pady=(0, 10))
 
-        # Server Menubutton
         self.server_var = ttkb.StringVar(value="Select Server")
         server_menu_btn = ttkb.Menubutton(
             server_frame,
@@ -110,7 +108,6 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         )
         server_menu_btn.pack(fill="x", padx=5, pady=(10, 10))
 
-        # Menu items
         menu = tk.Menu(server_menu_btn, tearoff=1)
         server_menu_btn["menu"] = menu
         menu.delete(0)
@@ -126,14 +123,13 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         for server in lin_servers:
             menu.add_radiobutton(label=f"    {server}", variable=self.server_var, value=server)
 
-        # Get Metrics Button
         self.get_metrics_btn = ttkb.Button(
             server_frame,
             text="Get Metrics",
             bootstyle="success",
             style="Get.TButton",
-            width=15
-            #command=self.update_server_metrics
+            width=15,
+            command=self.update_all_metrics
         )
         self.get_metrics_btn.pack(pady=(0, 10))
         
@@ -141,95 +137,204 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         self.main_area = ttkb.Frame(self, padding=(10, 10, 10, 10))
         self.main_area.grid(row=1, column=1, sticky="nsew")
         
-        self.content_frame = ScrolledFrame(self.main_area)#, relief="solid", borderwidth=1)
+        self.content_frame = ScrolledFrame(self.main_area)
         self.content_frame.pack(fill="both", expand=True)
         
-        loading_label = ttkb.Label(
+        self.loading_label = ttkb.Label(
             self.content_frame,
-            text=f"Connecting to ...",
+            text="Select a server and click 'Get Metrics'",
             font=("Calibri", 14, "bold"),
             bootstyle=INFO
         )
-        loading_label.pack(expand=True)
+        self.loading_label.pack(expand=True)
         
-        self.update_server_metrics
+    def check_rdp_connectivity(self, server, port=3389):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        try:
+            result = sock.connect_ex((server, port))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
         
+    def get_windows_metrics(self, server, credentials):
+        metrics = {
+            'ping': False,
+            'rdp': False,
+            'cpu_usage': 0,
+            'ram_usage': 0,
+            'C_drive': 0,
+            'D_drive': 0,
+            'status': 'offline'
+        }
         
-    def update_server_metrics(self):
+        try:
+            # Check ping
+            ping_result = subprocess.run(['ping', '-n', '2', server], 
+                                       capture_output=True, 
+                                       text=True).returncode
+            metrics['ping'] = ping_result == 0
+            
+            if not metrics['ping']:
+                return {server: metrics}
+                
+            # Check RDP
+            metrics['rdp'] = self.check_rdp_connectivity(server)
+            
+            # Connect via WMI
+            conn = wmi.WMI(server, 
+                          user=credentials['user'], 
+                          password=credentials['password'])
+            
+            # CPU Usage
+            metrics['cpu_usage'] = conn.Win32_Processor()[0].LoadPercentage
+            
+            # RAM Usage
+            total_ram = int(conn.Win32_ComputerSystem()[0].TotalPhysicalMemory)
+            free_ram = int(conn.Win32_OperatingSystem()[0].FreePhysicalMemory) * 1024
+            metrics['ram_usage'] = round(((total_ram - free_ram) / total_ram) * 100, 1)
+            
+            # Disk Usage
+            for disk in conn.Win32_LogicalDisk():
+                if disk.DeviceID == 'C:':
+                    metrics['C_drive'] = round((1 - (int(disk.FreeSpace) / int(disk.Size))) * 100, 1)
+                elif disk.DeviceID == 'D:':
+                    metrics['D_drive'] = round((1 - (int(disk.FreeSpace) / int(disk.Size))) * 100, 1)
+            
+            metrics['status'] = 'online'
+            
+        except Exception as e:
+            print(f"Error getting Windows metrics for {server}: {str(e)}")
         
+        return {server: metrics}
+    
+    def get_linux_metrics(self, server, credentials):
+        metrics = {
+            'ping': False,
+            'rdp': False,
+            'cpu_usage': 0,
+            'ram_usage': 0,
+            'C_drive': 0,
+            'D_drive': 0,
+            'status': 'offline'
+        }
         
+        try:
+            # Check ping
+            ping_result = subprocess.run(['ping', '-c', '2', server], 
+                                       capture_output=True, 
+                                       text=True).returncode
+            metrics['ping'] = ping_result == 0
+            
+            if not metrics['ping']:
+                return {server: metrics}
+                
+            # Check SSH (using port 22)
+            metrics['rdp'] = self.check_rdp_connectivity(server, port=22)
+            
+            # Connect via SSH
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(hostname=server, 
+                          username=credentials['user'], 
+                          password=credentials['password'],
+                          timeout=10)
+            
+            # Execute commands to get metrics
+            commands = """
+            top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}';
+            free -b | awk '/Mem:/{print $2, $3}';
+            df -B1 / | awk 'NR==2 {print $3/$2*100}';
+            df -B1 | awk '/\\/mnt\\/d$/{print $3/$2*100}';
+            """
+            
+            stdin, stdout, stderr = client.exec_command(commands)
+            output = stdout.read().decode().splitlines()
+            
+            # Parse output
+            if len(output) >= 1:
+                metrics['cpu_usage'] = round(float(output[0].strip()), 1)
+            
+            if len(output) >= 2:
+                total_ram, used_ram = map(int, output[1].split())
+                metrics['ram_usage'] = round((used_ram / total_ram) * 100, 1)
+            
+            if len(output) >= 3:
+                metrics['C_drive'] = round(float(output[2].strip()), 1)
+            
+            if len(output) >= 4:
+                metrics['D_drive'] = round(float(output[3].strip()), 1)
+            
+            client.close()
+            metrics['status'] = 'online'
+            
+        except Exception as e:
+            print(f"Error getting Linux metrics for {server}: {str(e)}")
         
-
-
-
-
-
-
-
+        return {server: metrics}
+    
+    def update_all_metrics(self):
+        self.loading_label.config(text="Collecting metrics for all servers...")
+        self.update()
+        
+        # Use ThreadPoolExecutor to fetch metrics in parallel
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = []
+            
+            for server, credentials in self.server_credentials.items():
+                if credentials['type'] == 'Windows':
+                    futures.append(executor.submit(self.get_windows_metrics, server, credentials))
+                else:  # Linux
+                    futures.append(executor.submit(self.get_linux_metrics, server, credentials))
+            
+            # Wait for all futures to complete
+            self.server_details = {}
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    self.server_details.update(result)
+                except Exception as e:
+                    print(f"Error processing server metrics: {str(e)}")
+        
+        self.loading_label.config(text="Metrics collection complete!")
+        self.display_metrics()
+    
+    def display_metrics(self):
+        # Clear previous content
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+        
+        # Create a table to display metrics
+        columns = ('Server', 'Status', 'Ping', 'RDP/SSH', 'CPU %', 'RAM %', 'C Drive %', 'D Drive %')
+        tree = ttkb.Treeview(self.content_frame, columns=columns, show='headings', bootstyle="info")
+        
+        # Define headings
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=100, anchor='center')
+        
+        # Add data to the treeview
+        for server, metrics in self.server_details.items():
+            status = "🟢" if metrics['status'] == 'online' else "🔴"
+            ping = "✔" if metrics['ping'] else "✖"
+            rdp = "✔" if metrics['rdp'] else "✖"
+            
+            tree.insert('', 'end', values=(
+                server,
+                status,
+                ping,
+                rdp,
+                metrics['cpu_usage'],
+                metrics['ram_usage'],
+                metrics['C_drive'],
+                metrics['D_drive']
+            ))
+        
+        tree.pack(fill='both', expand=True)
 
 if __name__ == '__main__':
     app = ttkb.Window("Health Check Dashboard", "yeti")
-    #app.geometry("1100x700")
     app.state('zoomed')
     dashboard = SystemHealthCheckDashboard(app)
     app.mainloop()
-	
-	
-	
-	
-	
-Ping:
-subprocess.run(['ping','-n','2',server], capture_output=True, text=True).returncode
-
-rdp or ssh:
-def check_rdp_connectivity(server, port=3389):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(5)
-    try:
-        result = sock.connect_ex((server, port))
-        if result == 0:
-            return True 
-        else:
-            return False
-        sock.close()    
-    except Exception as e:
-        return False
-	
-CPU:
-	for windows:-
-	conn = wmi.WMI(server, user="username", password="password")
-	conn.Win32_OperatingSystem()[0].LoadPercentage
-
-	for linux:-
-	client = paramiko.SSHClient()
-	client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-	client.connect(hostname=server, username="username", password="password")
-	commands = """
-			 free -b | awk '/Mem:/{print $2}';
-			 cat /proc/uptime | awk '{print $1}';
-			 top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}';
-			 free -b | awk '/Mem:/{print $2, $3}';
-			 df -B1 / | awk 'NR==2 {print $1,$2,$3,$6}'
-			 """
-	stdin, stdout, stderr = self.ssh_conn.exec_command(commands)
-	output = stdout.read().decode().splitlines()
-	export the cpu usage.
-
-RAM:
-	for windows:-
-	use wmi and calculate usage percentage
-
-	for linux:
-	use plrevious connection and calculate RAM usage
-
-C drive:
-	for windows:
-	use wmi and calculate usage percentage
-	
-	for linux:
-	get the first disk mounted ob root like '/'
-	using the same command 
-	
-d drive:
-	for windows:
-	use wmi and calculate usage percentage
