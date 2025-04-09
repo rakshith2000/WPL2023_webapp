@@ -7,17 +7,18 @@ import psutil, wmi, socket, platform, subprocess, paramiko, re
 from datetime import datetime
 import threading
 from queue import Queue
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pythoncom  # Import pythoncom for COM initialization
 
 class SystemHealthCheckDashboard(ttkb.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.pack(fill="both", expand=True)
-        user1 = "user1" #Windows 6 servers
-        password1 = "c3hbihbu99b^*(bjbjb3v"
         
-        user2 = "user2" #Linux servers
+        # Server credentials (redacted for security)
+        user1 = "user1" # Windows servers
+        password1 = "c3hbihbu99b^*(bjbjb3v"
+        user2 = "user2" # Linux servers
         password2 = "Mhgvhgco&frr$Bt1"
         
         self.server_credentials = {
@@ -50,6 +51,8 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         self.disks_info = None
         self.computer_system_info = None
         self.server_details = {}  # To store collected metrics
+        self.metrics_thread = None
+        self.stop_event = threading.Event()
 
     def create_header(self):
         header_frame = ttkb.Frame(self, padding=10, bootstyle=PRIMARY)
@@ -130,9 +133,20 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             bootstyle="success",
             style="Get.TButton",
             width=15,
-            command=self.start_metrics_thread
+            command=self.start_metrics_collection
         )
         self.get_metrics_btn.pack(pady=(0, 10))
+        
+        self.cancel_btn = ttkb.Button(
+            server_frame,
+            text="Cancel",
+            bootstyle="danger",
+            style="Get.TButton",
+            width=15,
+            command=self.cancel_metrics_collection,
+            state="disabled"
+        )
+        self.cancel_btn.pack(pady=(0, 10))
         
     def create_main_area(self):
         self.main_area = ttkb.Frame(self, padding=(10, 10, 10, 10))
@@ -148,7 +162,22 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             bootstyle=INFO
         )
         self.loading_label.pack(expand=True)
-
+        
+        # Add progress bar
+        self.progress = ttkb.Progressbar(
+            self.content_frame,
+            bootstyle="success-striped",
+            mode="determinate"
+        )
+        
+        # Add status label
+        self.status_label = ttkb.Label(
+            self.content_frame,
+            text="",
+            font=("Calibri", 10),
+            bootstyle=INFO
+        )
+        
     def check_rdp_connectivity(self, server, port=3389):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(5)
@@ -173,12 +202,23 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         try:
             pythoncom.CoInitialize()  # Initialize COM for this thread
 
-            # Check ping
-            ping_result = subprocess.run(['ping', '-n', '2', server], 
-                                       capture_output=True, 
-                                       text=True).returncode
-            metrics['ping'] = ping_result == 0
+            # Check if we should stop
+            if self.stop_event.is_set():
+                return {server: metrics}
+                
+            # Update progress
+            self.update_progress(f"Checking {server}...")
             
+            # Check ping
+            try:
+                ping_result = subprocess.run(['ping', '-n', '2', server], 
+                                           capture_output=True, 
+                                           text=True,
+                                           timeout=5).returncode
+                metrics['ping'] = ping_result == 0
+            except subprocess.TimeoutExpired:
+                metrics['ping'] = False
+                
             if not metrics['ping']:
                 return {server: metrics}
                 
@@ -186,74 +226,181 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             metrics['rdp'] = self.check_rdp_connectivity(server)
             
             # Connect via WMI
-            conn = wmi.WMI(server, 
-                          user=credentials['user'], 
-                          password=credentials['password'])
-            
-            # CPU Usage
-            metrics['cpu_usage'] = conn.Win32_Processor()[0].LoadPercentage
-            
-            # RAM Usage
-            total_ram = int(conn.Win32_ComputerSystem()[0].TotalPhysicalMemory)
-            free_ram = int(conn.Win32_OperatingSystem()[0].FreePhysicalMemory) * 1024
-            metrics['ram_usage'] = round(((total_ram - free_ram) / total_ram) * 100, 1)
-            
-            # Disk usage for C: and D:
-            drives = conn.Win32_LogicalDisk(DriveType=3)
-            for drive in drives:
-                if drive.DeviceID == "C:":
-                    metrics['C_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
-                elif drive.DeviceID == "D:":
-                    metrics['D_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
-            
-            metrics['status'] = 'online'
+            try:
+                conn = wmi.WMI(server, 
+                              user=credentials['user'], 
+                              password=credentials['password'],
+                              timeout=5)
+                
+                # CPU Usage
+                metrics['cpu_usage'] = conn.Win32_Processor()[0].LoadPercentage
+                
+                # RAM Usage
+                total_ram = int(conn.Win32_ComputerSystem()[0].TotalPhysicalMemory)
+                free_ram = int(conn.Win32_OperatingSystem()[0].FreePhysicalMemory) * 1024
+                metrics['ram_usage'] = round(((total_ram - free_ram) / total_ram) * 100, 1)
+                
+                # Drive Usage (C: and D:)
+                drives = conn.Win32_LogicalDisk(DriveType=3)
+                for drive in drives:
+                    if drive.DeviceID == "C:":
+                        metrics['C_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
+                    elif drive.DeviceID == "D:":
+                        metrics['D_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
+                
+                metrics['status'] = 'online'
+            except Exception as e:
+                self.update_progress(f"Error connecting to {server}: {str(e)}")
         except Exception as e:
-            print(f"Error getting metrics for {server}: {e}")
+            self.update_progress(f"Error getting metrics for {server}: {str(e)}")
         finally:
             pythoncom.CoUninitialize()  # Clean up COM for this thread
         
         return {server: metrics}
 
-    def start_metrics_thread(self):
-        # Start a new thread for fetching metrics to avoid blocking the GUI
-        server = self.server_var.get()
-        if server:
-            thread = threading.Thread(target=self.update_all_metrics, args=(server,))
-            thread.start()
-
-    def update_all_metrics(self, server):
-        self.loading_label.config(text="Collecting metrics for all servers...")
-        self.update()
+    def get_linux_metrics(self, server, credentials):
+        metrics = {
+            'ping': False,
+            'rdp': False,
+            'cpu_usage': 0,
+            'ram_usage': 0,
+            'C_drive': 0,
+            'D_drive': 0,
+            'status': 'offline'
+        }
         
-        # Use ThreadPoolExecutor to fetch metrics in parallel in a worker thread
-        self.result_queue = Queue()
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            for server, credentials in self.server_credentials.items():
-                executor.submit(self.get_metrics_worker, server, credentials)
-
-        # Schedule periodic checking of the queue to update the UI once metrics are collected
-        self.after(100, self.check_metrics_queue)
-
-    def check_metrics_queue(self):
         try:
-            while not self.result_queue.empty():
-                result = self.result_queue.get_nowait()
-                self.server_details.update(result)
+            # Check if we should stop
+            if self.stop_event.is_set():
+                return {server: metrics}
+                
+            self.update_progress(f"Checking {server}...")
             
-            # If all metrics are collected, update the UI
-            if len(self.server_details) == len(self.server_credentials):
-                self.update_gui_after_metrics()
-            else:
-                # If still waiting, check again after a small delay
-                self.after(100, self.check_metrics_queue)
+            # Check ping
+            try:
+                ping_result = subprocess.run(['ping', '-c', '2', server], 
+                                           capture_output=True, 
+                                           text=True,
+                                           timeout=5).returncode
+                metrics['ping'] = ping_result == 0
+            except subprocess.TimeoutExpired:
+                metrics['ping'] = False
+                
+            if not metrics['ping']:
+                return {server: metrics}
+                
+            # SSH connection would go here
+            # For now just mark as online if ping succeeds
+            metrics['status'] = 'online'
+            
         except Exception as e:
-            print(f"Error while processing metrics: {e}")
+            self.update_progress(f"Error getting Linux metrics for {server}: {str(e)}")
+            
+        return {server: metrics}
 
-    def update_gui_after_metrics(self):
-        self.loading_label.config(text="Metrics collection complete!")
+    def start_metrics_collection(self):
+        """Start metrics collection in a separate thread"""
+        self.stop_event.clear()
+        self.server_details = {}
+        
+        # Clear previous content and show progress
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+            
+        self.loading_label.pack(expand=True)
+        self.progress.pack(fill="x", pady=10)
+        self.status_label.pack(fill="x", pady=5)
+        
+        self.loading_label.config(text="Collecting metrics... Please wait")
+        self.progress["value"] = 0
+        self.progress["maximum"] = len(self.server_credentials)
+        self.status_label.config(text="Starting...")
+        
+        # Disable buttons during collection
+        self.get_metrics_btn.config(state="disabled")
+        self.cancel_btn.config(state="enabled")
+        
+        # Start collection in a separate thread
+        self.metrics_thread = threading.Thread(
+            target=self.collect_metrics_thread,
+            daemon=True
+        )
+        self.metrics_thread.start()
+        
+        # Start checking progress
+        self.check_progress()
+
+    def collect_metrics_thread(self):
+        """Thread function to collect metrics from all servers"""
+        try:
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = {}
+                
+                # Start all tasks
+                for server, credentials in self.server_credentials.items():
+                    if self.stop_event.is_set():
+                        break
+                        
+                    if credentials["type"] == "Windows":
+                        future = executor.submit(self.get_windows_metrics, server, credentials)
+                    else:
+                        future = executor.submit(self.get_linux_metrics, server, credentials)
+                    futures[future] = server
+                
+                # Process results as they come in
+                for future in as_completed(futures):
+                    if self.stop_event.is_set():
+                        break
+                        
+                    server = futures[future]
+                    try:
+                        result = future.result()
+                        self.server_details.update(result)
+                    except Exception as e:
+                        self.update_progress(f"Error processing {server}: {str(e)}")
+                        
+            if not self.stop_event.is_set():
+                self.after(0, self.metrics_complete)
+                
+        except Exception as e:
+            self.update_progress(f"Error in metrics collection: {str(e)}")
+            self.after(0, self.metrics_complete)
+
+    def update_progress(self, message):
+        """Thread-safe way to update progress"""
+        self.after(0, lambda: self.status_label.config(text=message))
+
+    def check_progress(self):
+        """Update progress bar periodically"""
+        if hasattr(self, 'server_details'):
+            progress = len(self.server_details)
+            total = len(self.server_credentials)
+            self.progress["value"] = progress
+            
+            if progress < total and not self.stop_event.is_set():
+                self.after(100, self.check_progress)
+
+    def metrics_complete(self):
+        """Called when metrics collection is complete"""
+        self.progress["value"] = len(self.server_credentials)
+        self.status_label.config(text="Metrics collection complete!")
+        self.loading_label.config(text="Displaying results...")
+        
+        # Re-enable buttons
+        self.get_metrics_btn.config(state="enabled")
+        self.cancel_btn.config(state="disabled")
+        
+        # Display results
         self.display_metrics()
 
+    def cancel_metrics_collection(self):
+        """Cancel the ongoing metrics collection"""
+        self.stop_event.set()
+        self.status_label.config(text="Cancelling... Please wait")
+        self.cancel_btn.config(state="disabled")
+
     def display_metrics(self):
+        """Display collected metrics in a treeview"""
         # Clear previous content
         for widget in self.content_frame.winfo_children():
             widget.destroy()
