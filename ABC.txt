@@ -1,9 +1,111 @@
-Error getting Windows metrics for USWIW1489: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
-Error getting Windows metrics for USWIW1531: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
-Error getting Windows metrics for USWIW1533: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
-Error getting Windows metrics for USWIW1492: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
-Error getting Windows metrics for USWIW1490: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
-Error getting Windows metrics for USWIW1530: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
-Error getting Windows metrics for USWIW716: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
-Error getting Windows metrics for USWIW714: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
-Error getting Windows metrics for USWIW715: <x_wmi: Unexpected COM Error (-2147221008, 'CoInitialize has not been called.', None, None)>
+import ttkbootstrap as ttkb
+from ttkbootstrap.constants import *
+from ttkbootstrap.style import Style
+from ttkbootstrap.scrolled import ScrolledFrame
+import tkinter as tk
+import psutil, wmi, socket, platform, subprocess, paramiko, re
+from datetime import datetime
+import threading
+from queue import Queue
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+class SystemHealthCheckDashboard(ttkb.Frame):
+    def __init__(self, master):
+        super().__init__(master)
+        self.pack(fill="both", expand=True)
+        
+        # Server credentials
+        self.server_credentials = { ... }  # Same as original code
+        
+        # Create layout and frames (same as original)
+        self.create_header()
+        self.create_left_pane()
+        self.create_main_area()
+
+        self.current_server = None
+        self.wmi_conn = None
+        self.server_details = {}  # To store collected metrics
+        
+        self.result_queue = Queue()
+
+    def update_gui_after_metrics(self):
+        self.loading_label.config(text="Metrics collection complete!")
+        self.display_metrics()
+
+    def get_metrics_worker(self, server, credentials):
+        # Perform the metrics collection (same as original code, can be Windows or Linux)
+        # Once done, put the result in the queue for the GUI thread to handle
+        
+        result = None
+        if credentials['type'] == 'Windows':
+            result = self.get_windows_metrics(server, credentials)
+        else:
+            result = self.get_linux_metrics(server, credentials)
+        
+        self.result_queue.put(result)
+
+    def update_all_metrics(self):
+        self.loading_label.config(text="Collecting metrics for all servers...")
+        self.update()
+        
+        # Use ThreadPoolExecutor to fetch metrics in parallel in a worker thread
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            for server, credentials in self.server_credentials.items():
+                executor.submit(self.get_metrics_worker, server, credentials)
+
+        # Schedule periodic checking of the queue to update the UI once metrics are collected
+        self.after(100, self.check_metrics_queue)
+
+    def check_metrics_queue(self):
+        try:
+            while not self.result_queue.empty():
+                result = self.result_queue.get_nowait()
+                self.server_details.update(result)
+            
+            # If all metrics are collected, update the UI
+            if len(self.server_details) == len(self.server_credentials):
+                self.update_gui_after_metrics()
+            else:
+                # If still waiting, check again after a small delay
+                self.after(100, self.check_metrics_queue)
+        except Exception as e:
+            print(f"Error while processing metrics: {e}")
+
+    def display_metrics(self):
+        # Clear previous content
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+
+        # Create and populate the treeview with metrics
+        columns = ('Server', 'Status', 'Ping', 'RDP/SSH', 'CPU %', 'RAM %', 'C Drive %', 'D Drive %')
+        tree = ttkb.Treeview(self.content_frame, columns=columns, show='headings', bootstyle="info")
+        
+        # Define headings
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=100, anchor='center')
+        
+        # Add data to the treeview
+        for server, metrics in self.server_details.items():
+            status = "🟢" if metrics['status'] == 'online' else "🔴"
+            ping = "✔" if metrics['ping'] else "✖"
+            rdp = "✔" if metrics['rdp'] else "✖"
+            
+            tree.insert('', 'end', values=(
+                server,
+                status,
+                ping,
+                rdp,
+                metrics['cpu_usage'],
+                metrics['ram_usage'],
+                metrics['C_drive'],
+                metrics['D_drive']
+            ))
+        
+        tree.pack(fill='both', expand=True)
+
+if __name__ == '__main__':
+    app = ttkb.Window("Health Check Dashboard", "yeti")
+    app.state('zoomed')
+    dashboard = SystemHealthCheckDashboard(app)
+    app.mainloop()
