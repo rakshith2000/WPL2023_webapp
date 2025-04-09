@@ -1,10 +1,221 @@
+import ttkbootstrap as ttkb
+from ttkbootstrap.constants import *
+from ttkbootstrap.style import Style
+from ttkbootstrap.scrolled import ScrolledFrame
+import tkinter as tk
+import psutil, wmi, socket, platform, subprocess, paramiko, re
+from datetime import datetime
+import threading
+from queue import Queue
+from concurrent.futures import ThreadPoolExecutor
+import pythoncom  # Import pythoncom for COM initialization
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import random  # For testing purposes
 
 class SystemHealthCheckDashboard(ttkb.Frame):
-    # ... (keep all your existing methods and init code)
-    
+    def __init__(self, master):
+        super().__init__(master)
+        self.pack(fill="both", expand=True)
+        user1 = "kosv1106" #Windows 6 servers
+        password1 = "c3RM21nvPx2&%32fsp93v"
+        
+        user2 = "kosv1388" #Linux servers
+        password2 = "M7!k28p&c30tyBt1"
+        
+        self.server_credentials = {
+            "USWIW1489": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1490": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1492": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1530": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1531": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1533": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW714": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW715": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW716": {"type": "Windows", "user": user1, "password": password1},
+            "USWIX733": {"type": "Linux", "user": user2, "password": password2},
+        }
+
+        # Configure grid layout
+        self.columnconfigure(0, weight=0)  # Left pane (fixed)
+        self.columnconfigure(1, weight=1)  # Right content area (expandable)
+        self.rowconfigure(0, weight=0)  # Header (fixed height)
+        self.rowconfigure(1, weight=1)  # Main area (expandable)
+
+        self.create_header()
+        self.create_left_pane()
+        self.create_main_area()
+        
+        self.server_details = {}  # To store collected metrics
+        self.canvases = []       # For matplotlib canvases
+        self.figures = []        # For matplotlib figures
+        self.axes = []           # For matplotlib axes
+
+    def create_header(self):
+        header_frame = ttkb.Frame(self, padding=10, bootstyle=PRIMARY)
+        header_frame.grid(row=0, column=0, columnspan=2, sticky="nsew")
+
+        header_lbl = ttkb.Label(
+            master=header_frame,
+            text="JDA Application Healthcheck Dashboard",
+            bootstyle=(PRIMARY, INVERSE),
+            font=("Helvetica", 18, "bold"),
+            anchor='center'
+        )
+        header_lbl.pack(fill="x", expand=True)
+
+    def create_left_pane(self):
+        style = ttkb.Style()
+        style.configure('Overview.TButton', font=('Calibri', 14, 'bold'))
+        
+        left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)
+        left_pane.grid(row=1, column=0, sticky="ns")
+        left_pane.grid_propagate(False)
+
+        self.overview_btn = ttkb.Button(
+            left_pane,
+            text="JDA Overview",
+            bootstyle="success",
+            style='Overview.TButton',
+            command=self.start_metrics_collection_thread
+        )
+        self.overview_btn.pack(fill="x", pady=(0, 20))
+        
+    def create_main_area(self):
+        self.main_area = ttkb.Frame(self, padding=(10, 10, 10, 10))
+        self.main_area.grid(row=1, column=1, sticky="nsew")
+        
+        self.content_frame = ScrolledFrame(self.main_area)
+        self.content_frame.pack(fill="both", expand=True)
+        
+        self.loading_label = ttkb.Label(
+            self.content_frame,
+            text="Click 'JDA Overview' to fetch server metrics",
+            font=("Calibri", 14, "bold"),
+            bootstyle=INFO
+        )
+        self.loading_label.pack(expand=True)
+        
+    def check_rdp_connectivity(self, server, port=3389):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        try:
+            result = sock.connect_ex((server, port))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
+        
+    def get_windows_metrics(self, server, credentials):
+        metrics = {
+            'ping': False,
+            'rdp': False,
+            'cpu_usage': 0,
+            'ram_usage': 0,
+            'C_drive': 0,
+            'D_drive': 0,
+            'status': 'offline'
+        }
+        
+        try:
+            pythoncom.CoInitialize()  # Initialize COM for this thread... # Check ping
+            ping_result = subprocess.run(['ping', '-n', '2', server], 
+                                       capture_output=True, 
+                                       text=True).returncode
+            metrics['ping'] = ping_result == 0
+            
+            if not metrics['ping']:
+                return {server: metrics}
+                
+            # Check RDP
+            metrics['rdp'] = self.check_rdp_connectivity(server)
+            
+            # Connect via WMI
+            conn = wmi.WMI(server, 
+                          user=credentials['user'], 
+                          password=credentials['password'])
+            
+            # CPU Usage
+            metrics['cpu_usage'] = conn.Win32_Processor()[0].LoadPercentage
+            
+            # RAM Usage
+            total_ram = int(conn.Win32_ComputerSystem()[0].TotalPhysicalMemory)
+            free_ram = int(conn.Win32_OperatingSystem()[0].FreePhysicalMemory) * 1024
+            metrics['ram_usage'] = round(((total_ram - free_ram) / total_ram) * 100, 1)
+            
+            # Drive Usage (C: and D:)
+            drives = conn.Win32_LogicalDisk(DriveType=3)
+            for drive in drives:
+                if drive.DeviceID == "C:":
+                    metrics['C_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
+                elif drive.DeviceID == "D:":
+                    metrics['D_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
+            
+            metrics['status'] = 'online'
+        except Exception as e:
+            print(f"Error getting metrics for {server}: {e}")
+        finally:
+            pythoncom.CoUninitialize()  # Clean up COM for this thread
+        
+        return {server: metrics}
+
+    def get_linux_metrics(self, server, credentials):
+        metrics = {
+            'ping': False,
+            'rdp': False,
+            'cpu_usage': 0,
+            'ram_usage': 0,
+            'C_drive': 0,
+            'D_drive': 0,
+            'status': 'offline'
+        }
+        # Linux metrics collection (similar logic, using paramiko or other tools)
+        return {server: metrics}
+
+    def get_metrics_worker(self, server, credentials):
+        if credentials["type"] == "Windows":
+            result = self.get_windows_metrics(server, credentials)
+        elif credentials["type"] == "Linux":
+            result = self.get_linux_metrics(server, credentials)
+        self.result_queue.put(result)
+        
+    def start_metrics_collection_thread(self):
+        """Start a thread to collect metrics."""
+        self.overview_btn.config(state="disabled")
+        threading.Thread(target=self.update_all_metrics).start()
+
+    def update_all_metrics(self):
+        # Clear previous metrics
+        self.server_details = {}
+        
+        # Use ThreadPoolExecutor to fetch metrics in parallel in a worker thread
+        self.result_queue = Queue()
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            for server, credentials in self.server_credentials.items():
+                executor.submit(self.get_metrics_worker, server, credentials)
+
+        # Schedule periodic checking of the queue to update the UI once metrics are collected
+        self.after(100, self.check_metrics_queue)
+
+    def check_metrics_queue(self):
+        try:
+            while not self.result_queue.empty():
+                result = self.result_queue.get_nowait()
+                self.server_details.update(result)
+            
+            # If all metrics are collected, update the UI
+            if len(self.server_details) == len(self.server_credentials):
+                self.update_gui_after_metrics()
+            else:
+                # If still waiting, check again after a small delay
+                self.after(100, self.check_metrics_queue)
+        except Exception as e:
+            print(f"Error while processing metrics: {e}")
+        finally:
+            self.overview_btn.config(state="normal")
+
+    def update_gui_after_metrics(self):
+        self.display_metrics()
+
     def display_metrics(self):
         # Clear previous content
         for widget in self.content_frame.winfo_children():
@@ -86,3 +297,10 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         # Redraw all canvases
         for canvas in self.canvases:
             canvas.draw()
+
+
+if __name__ == '__main__':
+    app = ttkb.Window("Health Check Dashboard", "yeti")
+    app.state('zoomed')
+    dashboard = SystemHealthCheckDashboard(app)
+    app.mainloop()
