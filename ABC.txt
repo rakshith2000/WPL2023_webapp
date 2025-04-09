@@ -203,15 +203,12 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                     metrics['D_drive'] = round((1 - (int(disk.FreeSpace) / int(disk.Size))) * 100, 1)
             
             metrics['status'] = 'online'
-            
         except Exception as e:
-            print(f"Error getting Windows metrics for {server}: {e}")
+            print(f"Error getting metrics for {server}: {e}")
         
         return {server: metrics}
 
     def get_linux_metrics(self, server, credentials):
-        # Linux metrics collection (similar logic, using paramiko or other tools)
-        # This is just a placeholder for now
         metrics = {
             'ping': False,
             'rdp': False,
@@ -221,13 +218,22 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             'D_drive': 0,
             'status': 'offline'
         }
+        # Linux metrics collection (similar logic, using paramiko or other tools)
         return {server: metrics}
-    
+
+    def get_metrics_worker(self, server, credentials):
+        if credentials["type"] == "Windows":
+            result = self.get_windows_metrics(server, credentials)
+        elif credentials["type"] == "Linux":
+            result = self.get_linux_metrics(server, credentials)
+        self.result_queue.put(result)
+        
     def update_all_metrics(self):
         self.loading_label.config(text="Collecting metrics for all servers...")
         self.update()
         
         # Use ThreadPoolExecutor to fetch metrics in parallel in a worker thread
+        self.result_queue = Queue()
         with ThreadPoolExecutor(max_workers=10) as executor:
             for server, credentials in self.server_credentials.items():
                 executor.submit(self.get_metrics_worker, server, credentials)
