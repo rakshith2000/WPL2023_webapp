@@ -13,37 +13,216 @@ class SystemHealthCheckDashboard(ttkb.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.pack(fill="both", expand=True)
+        user1 = "user1" #Windows 6 servers
+        password1 = "c3hbihbu99b^*(bjbjb3v"
         
-        # Server credentials
-        self.server_credentials = { ... }  # Same as original code
+        user2 = "user2" #Linux servers
+        password2 = "Mhgvhgco&frr$Bt1"
         
-        # Create layout and frames (same as original)
+        self.server_credentials = {
+            "USWIW1489": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1490": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1492": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1530": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1531": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1533": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW714": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW715": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW716": {"type": "Windows", "user": user1, "password": password1},
+            "USWIX733": {"type": "Linux", "user": user2, "password": password2},
+        }
+
+        # Configure grid layout
+        self.columnconfigure(0, weight=0)  # Left pane (fixed)
+        self.columnconfigure(1, weight=1)  # Right content area (expandable)
+        self.rowconfigure(0, weight=0)  # Header (fixed height)
+        self.rowconfigure(1, weight=1)  # Main area (expandable)
+
         self.create_header()
         self.create_left_pane()
         self.create_main_area()
-
+        
         self.current_server = None
         self.wmi_conn = None
+        self.os_info = None
+        self.processor_info = None
+        self.disks_info = None
+        self.computer_system_info = None
         self.server_details = {}  # To store collected metrics
-        
-        self.result_queue = Queue()
 
-    def update_gui_after_metrics(self):
-        self.loading_label.config(text="Metrics collection complete!")
-        self.display_metrics()
+    def create_header(self):
+        header_frame = ttkb.Frame(self, padding=10, bootstyle=PRIMARY)
+        header_frame.grid(row=0, column=0, columnspan=2, sticky="nsew")
 
-    def get_metrics_worker(self, server, credentials):
-        # Perform the metrics collection (same as original code, can be Windows or Linux)
-        # Once done, put the result in the queue for the GUI thread to handle
-        
-        result = None
-        if credentials['type'] == 'Windows':
-            result = self.get_windows_metrics(server, credentials)
-        else:
-            result = self.get_linux_metrics(server, credentials)
-        
-        self.result_queue.put(result)
+        header_lbl = ttkb.Label(
+            master=header_frame,
+            text="JDA Application Healthcheck Dashboard",
+            bootstyle=(PRIMARY, INVERSE),
+            font=("Helvetica", 18, "bold"),
+            anchor='center'
+        )
+        header_lbl.pack(fill="x", expand=True)
 
+    def create_left_pane(self):
+        style = ttkb.Style()
+        style.configure('Overview.TButton', font=('Calibri', 14, 'bold'))
+        style.configure('Get.TButton', font=('Microsoft Sans Serif', 10, 'bold'), 
+                       foreground='white', background='#28a745', bordercolor='#28a745', 
+                       darkcolor='#28a745', lightcolor='#28a745', relief='raised', anchor='center')
+        style.configure('custom.TLabelframe', bordercolor='#6c757d', background=style.colors.light)
+        style.configure('custom.TLabelframe.Label',
+                      font=('Calibri', 14, 'bold'),
+                      foreground='#343a40',
+                      padding=10, background=style.colors.light)
+
+        left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)
+        left_pane.grid(row=1, column=0, sticky="ns")
+        left_pane.grid_propagate(False)
+
+        overview_btn = ttkb.Button(
+            left_pane,
+            text="JDA Overview",
+            bootstyle="success",
+            style='Overview.TButton',
+        )
+        overview_btn.pack(fill="x", pady=(0, 20))
+
+        separator = ttkb.Separator(left_pane, bootstyle=SECONDARY)
+        separator.pack(fill="x", pady=(0, 20))
+
+        server_frame = ttkb.LabelFrame(
+            left_pane,
+            text="Select Server",
+            bootstyle="info",
+            style='custom.TLabelframe',
+            labelanchor="nw"
+        )
+        server_frame.pack(fill="x", pady=(0, 10))
+
+        self.server_var = ttkb.StringVar(value="Select Server")
+        server_menu_btn = ttkb.Menubutton(
+            server_frame,
+            textvariable=self.server_var,
+            bootstyle="primary-outline",
+            width=18
+        )
+        server_menu_btn.pack(fill="x", padx=5, pady=(10, 10))
+
+        menu = tk.Menu(server_menu_btn, tearoff=1)
+        server_menu_btn["menu"] = menu
+        menu.delete(0)
+        menu.add_command(label="Windows Servers", state="disabled", font=("Calibri", 10, "bold"))
+        win_servers = [server for server, details in self.server_credentials.items() if details["type"] == "Windows"]
+        for server in win_servers:
+            menu.add_radiobutton(label=f"    {server}", variable=self.server_var, value=server)
+            
+        menu.add_separator()
+        
+        menu.add_command(label="Linux Servers", state="disabled", font=("Calibri", 10, "bold"))
+        lin_servers = [server for server, details in self.server_credentials.items() if details["type"] == "Linux"]
+        for server in lin_servers:
+            menu.add_radiobutton(label=f"    {server}", variable=self.server_var, value=server)
+
+        self.get_metrics_btn = ttkb.Button(
+            server_frame,
+            text="Get Metrics",
+            bootstyle="success",
+            style="Get.TButton",
+            width=15,
+            command=self.update_all_metrics
+        )
+        self.get_metrics_btn.pack(pady=(0, 10))
+        
+    def create_main_area(self):
+        self.main_area = ttkb.Frame(self, padding=(10, 10, 10, 10))
+        self.main_area.grid(row=1, column=1, sticky="nsew")
+        
+        self.content_frame = ScrolledFrame(self.main_area)
+        self.content_frame.pack(fill="both", expand=True)
+        
+        self.loading_label = ttkb.Label(
+            self.content_frame,
+            text="Select a server and click 'Get Metrics'",
+            font=("Calibri", 14, "bold"),
+            bootstyle=INFO
+        )
+        self.loading_label.pack(expand=True)
+        
+    def check_rdp_connectivity(self, server, port=3389):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        try:
+            result = sock.connect_ex((server, port))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
+        
+    def get_windows_metrics(self, server, credentials):
+        metrics = {
+            'ping': False,
+            'rdp': False,
+            'cpu_usage': 0,
+            'ram_usage': 0,
+            'C_drive': 0,
+            'D_drive': 0,
+            'status': 'offline'
+        }
+        
+        try:
+            # Check ping
+            ping_result = subprocess.run(['ping', '-n', '2', server], 
+                                       capture_output=True, 
+                                       text=True).returncode
+            metrics['ping'] = ping_result == 0
+            
+            if not metrics['ping']:
+                return {server: metrics}
+                
+            # Check RDP
+            metrics['rdp'] = self.check_rdp_connectivity(server)
+            
+            # Connect via WMI
+            conn = wmi.WMI(server, 
+                          user=credentials['user'], 
+                          password=credentials['password'])
+            
+            # CPU Usage
+            metrics['cpu_usage'] = conn.Win32_Processor()[0].LoadPercentage
+            
+            # RAM Usage
+            total_ram = int(conn.Win32_ComputerSystem()[0].TotalPhysicalMemory)
+            free_ram = int(conn.Win32_OperatingSystem()[0].FreePhysicalMemory) * 1024
+            metrics['ram_usage'] = round(((total_ram - free_ram) / total_ram) * 100, 1)
+            
+            # Disk Usage
+            for disk in conn.Win32_LogicalDisk():
+                if disk.DeviceID == 'C:':
+                    metrics['C_drive'] = round((1 - (int(disk.FreeSpace) / int(disk.Size))) * 100, 1)
+                elif disk.DeviceID == 'D:':
+                    metrics['D_drive'] = round((1 - (int(disk.FreeSpace) / int(disk.Size))) * 100, 1)
+            
+            metrics['status'] = 'online'
+            
+        except Exception as e:
+            print(f"Error getting Windows metrics for {server}: {e}")
+        
+        return {server: metrics}
+
+    def get_linux_metrics(self, server, credentials):
+        # Linux metrics collection (similar logic, using paramiko or other tools)
+        # This is just a placeholder for now
+        metrics = {
+            'ping': False,
+            'rdp': False,
+            'cpu_usage': 0,
+            'ram_usage': 0,
+            'C_drive': 0,
+            'D_drive': 0,
+            'status': 'offline'
+        }
+        return {server: metrics}
+    
     def update_all_metrics(self):
         self.loading_label.config(text="Collecting metrics for all servers...")
         self.update()
@@ -70,6 +249,10 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                 self.after(100, self.check_metrics_queue)
         except Exception as e:
             print(f"Error while processing metrics: {e}")
+
+    def update_gui_after_metrics(self):
+        self.loading_label.config(text="Metrics collection complete!")
+        self.display_metrics()
 
     def display_metrics(self):
         # Clear previous content
