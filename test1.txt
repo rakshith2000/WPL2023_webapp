@@ -1,15 +1,164 @@
-import subprocess
+import tkinter as tk
+from tkinter import ttk
+import ttkbootstrap as ttk
+from ttkbootstrap.scrolled import ScrolledFrame
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
+import random
+from threading import Timer
 
-def get_cpu_ps_remote(server):
-    ps_script = """
-    Get-CimInstance Win32_Processor | 
-    Select-Object Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed |
-    ConvertTo-Json
-    """
-    cmd = [
-        "powershell",
-        "-Command",
-        f"Invoke-Command -ComputerName {server} -ScriptBlock {{{ps_script}}}"
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.stdout
+class ServerDashboard:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Server Resource Dashboard")
+        self.root.geometry("1000x800")
+        
+        # Create scrollable frame
+        self.scrolled_frame = ScrolledFrame(root)
+        self.scrolled_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Initialize plot widgets
+        self.canvases = []
+        self.figures = []
+        self.axes = []
+        
+        # Create empty plots
+        self.create_plots()
+        
+        # Start auto-refresh
+        self.refresh_data()
+
+    def create_plots(self):
+        """Initialize the 4 empty plots"""
+        # Clear existing widgets
+        for widget in self.scrolled_frame.winfo_children():
+            widget.destroy()
+        
+        self.canvases = []
+        self.figures = []
+        self.axes = []
+        
+        # Create 4 plots (CPU, RAM, C Drive, D Drive)
+        for i in range(4):
+            if i == 1:  # RAM plot (horizontal bar)
+                fig, ax = plt.subplots(figsize=(9, 3))
+            elif i == 2 or i == 3:  # C/D Drive plots (semi-doughnut)
+                fig, ax = plt.subplots(figsize=(9, 3))
+            else:  # CPU plot (vertical bar)
+                fig, ax = plt.subplots(figsize=(9, 3))
+                
+            self.figures.append(fig)
+            self.axes.append(ax)
+            
+            canvas = FigureCanvasTkAgg(fig, master=self.scrolled_frame)
+            canvas.draw()
+            widget = canvas.get_tk_widget()
+            widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            self.canvases.append(canvas)
+            
+            if i < 3:
+                ttk.Separator(self.scrolled_frame, orient='horizontal').pack(fill=tk.X, padx=10, pady=5)
+
+    def generate_random_data(self):
+        """Generate random server data for testing"""
+        servers = ["USWIW1490", "USWIW1492", "USWIW1489", "USWIW1530", "USWIW1531", 
+                  "USWIW1533", "USWIW714", "USWIW715", "USWIW716", "USWIX733"]
+        
+        return {
+            "servers": servers,
+            "cpu_usage": [random.randint(10, 100) for _ in servers],
+            "ram_usage": [random.randint(10, 100) for _ in servers],
+            "disk_usage_c": [random.randint(10, 100) for _ in servers],
+            "disk_usage_d": [random.randint(10, 100) for _ in servers]
+        }
+
+    def get_colors(self, values):
+        """Determine bar colors based on percentage"""
+        colors = []
+        for val in values:
+            if val >= 95:
+                colors.append('red')
+            elif val >= 85:
+                colors.append('yellow')
+            else:
+                colors.append('green')
+        return colors
+
+    def plot_semi_doughnut(self, ax, value, label):
+        """Plot a semi-doughnut (half-circle) chart"""
+        # Define the circle parameters
+        wedges = [value, 100 - value]
+        colors = ['#2db7f1', '#d3d3d3']  # Blue for used, Grey for unused
+        
+        # Plot the semi-doughnut (half-circle)
+        ax.pie(wedges, colors=colors, startangle=90, wedgeprops=dict(width=0.4, edgecolor='black'))
+        ax.set_title(f"{label}", fontsize=10, weight='bold')
+        ax.set_aspect('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
+        ax.text(0, -1.1, f"{value}%", ha='center', va='center', fontsize=12)
+
+    def update_plots(self):
+        """Update all plots with new data"""
+        data = self.generate_random_data()
+        
+        # Clear previous plots
+        for fig in self.figures:
+            for ax in fig.axes:
+                ax.clear()
+        
+        # 1. CPU Usage Plot (Vertical Bar)
+        cpu_colors = self.get_colors(data["cpu_usage"])
+        self.figures[0].axes[0].bar(data["servers"], data["cpu_usage"], color=cpu_colors)
+        self.figures[0].axes[0].set_title("CPU Usage (%)", fontweight="bold")
+        self.figures[0].axes[0].set_ylim(0, 100)
+        self.figures[0].axes[0].grid(axis='y', linestyle='--', alpha=0.7)
+        for i, val in enumerate(data["cpu_usage"]):
+            self.figures[0].axes[0].text(i, val + 2, f"{val}%", ha='center')
+
+        # 2. RAM Usage Plot (Horizontal Bar)
+        ram_colors = self.get_colors(data["ram_usage"])
+        self.figures[1].axes[0].barh(data["servers"], data["ram_usage"], color=ram_colors)
+        self.figures[1].axes[0].set_title("RAM Usage (%)", fontweight="bold")
+        self.figures[1].axes[0].set_xlim(0, 100)
+        self.figures[1].axes[0].grid(axis='x', linestyle='--', alpha=0.7)
+        for i, val in enumerate(data["ram_usage"]):
+            self.figures[1].axes[0].text(val + 1, i, f"{val}%", va='center')
+
+        # 3. C Drive Usage Plot (Semi-Doughnut)
+        # Create a grid of subplots for the semi-doughnut charts
+        self.figures[2].clear()
+        self.figures[2].set_size_inches(9, 3)
+        self.figures[2].suptitle("C: Drive Usage (%)", fontweight="bold")
+        
+        # Create 2 rows, 5 columns for 10 servers
+        grid = self.figures[2].add_gridspec(2, 5)
+        for i in range(10):
+            ax = self.figures[2].add_subplot(grid[i//5, i%5])
+            self.plot_semi_doughnut(ax, data["disk_usage_c"][i], data["servers"][i])
+
+        # 4. D Drive Usage Plot (Semi-Doughnut)
+        self.figures[3].clear()
+        self.figures[3].set_size_inches(9, 3)
+        self.figures[3].suptitle("D: Drive Usage (%)", fontweight="bold")
+        
+        # Create 2 rows, 5 columns for 10 servers
+        grid = self.figures[3].add_gridspec(2, 5)
+        for i in range(10):
+            ax = self.figures[3].add_subplot(grid[i//5, i%5])
+            self.plot_semi_doughnut(ax, data["disk_usage_d"][i], data["servers"][i])
+
+        # Adjust layout and redraw all canvases
+        for fig in self.figures:
+            fig.tight_layout()
+        for canvas in self.canvases:
+            canvas.draw()
+
+    def refresh_data(self):
+        """Refresh data every 5 seconds"""
+        self.update_plots()
+        self.root.after(5000, self.refresh_data)  # Schedule next refresh in 5 seconds
+
+# Create and run the dashboard
+root = ttk.Window(themename="cosmo")
+dashboard = ServerDashboard(root)
+root.mainloop()
