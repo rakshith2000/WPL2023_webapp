@@ -298,17 +298,24 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         
         # Create CPU Usage frame
         cpu_frame = ttkb.LabelFrame(container_frame, text="CPU Usage", bootstyle="cosmo")
-        cpu_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=20)
+        cpu_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=10)
         
         # Create RAM Usage frame
         ram_frame = ttkb.LabelFrame(container_frame, text="RAM Usage", bootstyle="cosmo")
-        ram_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=20)
+        ram_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=10)
+        
+        # Create Disk Usage frame
+        disk_frame = ttkb.LabelFrame(container_frame, text="Disk Usage", bootstyle="cosmo")
+        disk_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=10)
         
         # Create plots for CPU Usage (Windows above Linux)
         self.create_metric_plots(cpu_frame, "CPU")
         
         # Create plots for RAM Usage (Windows above Linux)
         self.create_metric_plots(ram_frame, "RAM")
+        
+        # Create plots for Disk Usage
+        self.create_disk_usage_plots(disk_frame)
 
     def create_metric_plots(self, parent_frame, metric_type):
         """Create Windows and Linux plots for a specific metric type"""
@@ -342,17 +349,68 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         widget.pack(fill=tk.BOTH, expand=True, padx=5, pady=2)
         self.canvases.append(canvas)
 
-    def get_colors(self, values):
-        """Determine bar colors based on percentage"""
-        colors = []
-        for val in values:
-            if val >= 95:
-                colors.append('red')
-            elif val >= 85:
-                colors.append('yellow')
-            else:
-                colors.append('lightgreen')
-        return colors
+    def create_disk_usage_plots(self, parent_frame):
+        """Create meter plots for disk usage"""
+        # C: Drive frame
+        c_drive_frame = ttkb.LabelFrame(parent_frame, text="C: Drive (Windows) / Root Partition (Linux)", bootstyle="info")
+        c_drive_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 2))
+        
+        # D: Drive frame (Windows only)
+        d_drive_frame = ttkb.LabelFrame(parent_frame, text="D: Drive (Windows)", bootstyle="info")
+        d_drive_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(2, 5))
+        
+        # Create container frames for meters
+        c_drive_meters_frame = ttkb.Frame(c_drive_frame)
+        c_drive_meters_frame.pack(fill=tk.BOTH, expand=True)
+        
+        d_drive_meters_frame = ttkb.Frame(d_drive_frame)
+        d_drive_meters_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Store meter widgets for later updates
+        self.c_drive_meters = []
+        self.d_drive_meters = []
+        
+        # Create placeholder meters that will be updated with real data
+        for i in range(5):  # Placeholder count, will be replaced
+            meter = ttkb.Meter(
+                c_drive_meters_frame,
+                amountused=0,
+                meterthickness=20,
+                bootstyle="info",
+                interactive=False,
+                textfont=['Times', 16, 'bold'],
+                textright='%',
+                subtext='Loading...',
+                subtextfont=['Times', 10, 'bold'],
+                subtextstyle="secondary"
+            )
+            meter.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=5, pady=5)
+            self.c_drive_meters.append(meter)
+            
+        for i in range(5):  # Placeholder count, will be replaced
+            meter = ttkb.Meter(
+                d_drive_meters_frame,
+                amountused=0,
+                meterthickness=20,
+                bootstyle="info",
+                interactive=False,
+                textfont=['Times', 16, 'bold'],
+                textright='%',
+                subtext='Loading...',
+                subtextfont=['Times', 10, 'bold'],
+                subtextstyle="secondary"
+            )
+            meter.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=5, pady=5)
+            self.d_drive_meters.append(meter)
+
+    def get_meter_style(self, value):
+        """Determine meter style based on threshold"""
+        if value >= 95:
+            return "danger"
+        elif value >= 85:
+            return "warning"
+        else:
+            return "success"
 
     def update_plots_with_metrics(self):
         """Update all plots with actual metrics data"""
@@ -360,20 +418,26 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         windows_servers = []
         windows_cpu = []
         windows_ram = []
+        windows_c_drive = []
+        windows_d_drive = []
         
         linux_servers = []
         linux_cpu = []
         linux_ram = []
+        linux_c_drive = []
         
         for server, metrics in self.server_details.items():
             if self.server_credentials[server]["type"] == "Windows":
                 windows_servers.append(server)
                 windows_cpu.append(metrics['cpu_usage'])
                 windows_ram.append(metrics['ram_usage'])
+                windows_c_drive.append(metrics['C_drive'])
+                windows_d_drive.append(metrics['D_drive'])
             else:
                 linux_servers.append(server)
                 linux_cpu.append(metrics['cpu_usage'])
                 linux_ram.append(metrics['ram_usage'])
+                linux_c_drive.append(metrics['C_drive'])
         
         # Clear previous plots
         for ax in self.axes:
@@ -421,9 +485,95 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             for i, val in enumerate(linux_ram):
                 self.axes[3].text(val + 1, i, f"{val}%", va='center')
 
+        # Update Disk Usage meters
+        self.update_disk_meters(windows_servers, windows_c_drive, windows_d_drive, linux_servers, linux_c_drive)
+
         # Redraw all canvases
         for canvas in self.canvases:
             canvas.draw()
+
+    def update_disk_meters(self, windows_servers, windows_c_drive, windows_d_drive, linux_servers, linux_c_drive):
+        """Update the disk usage meter widgets with actual data"""
+        # Clear existing meters
+        for meter in self.c_drive_meters:
+            meter.destroy()
+        for meter in self.d_drive_meters:
+            meter.destroy()
+        
+        self.c_drive_meters = []
+        self.d_drive_meters = []
+        
+        # Create container frames for meters
+        c_drive_meters_frame = ttkb.Frame(self.content_frame.winfo_children()[0].winfo_children()[2].winfo_children()[0])
+        c_drive_meters_frame.pack(fill=tk.BOTH, expand=True)
+        
+        d_drive_meters_frame = ttkb.Frame(self.content_frame.winfo_children()[0].winfo_children()[2].winfo_children()[1])
+        d_drive_meters_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create C: Drive meters (Windows and Linux)
+        for i, (server, usage) in enumerate(zip(windows_servers, windows_c_drive)):
+            meter_style = self.get_meter_style(usage)
+            meter = ttkb.Meter(
+                c_drive_meters_frame,
+                amountused=usage,
+                meterthickness=20,
+                bootstyle=meter_style,
+                interactive=False,
+                textfont=['Times', 16, 'bold'],
+                textright='%',
+                subtext=f"{server} (C:)",
+                subtextfont=['Times', 10, 'bold'],
+                subtextstyle="secondary"
+            )
+            meter.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=5, pady=5)
+            self.c_drive_meters.append(meter)
+            
+        for i, (server, usage) in enumerate(zip(linux_servers, linux_c_drive)):
+            meter_style = self.get_meter_style(usage)
+            meter = ttkb.Meter(
+                c_drive_meters_frame,
+                amountused=usage,
+                meterthickness=20,
+                bootstyle=meter_style,
+                interactive=False,
+                textfont=['Times', 16, 'bold'],
+                textright='%',
+                subtext=f"{server} (/)",
+                subtextfont=['Times', 10, 'bold'],
+                subtextstyle="secondary"
+            )
+            meter.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=5, pady=5)
+            self.c_drive_meters.append(meter)
+        
+        # Create D: Drive meters (Windows only)
+        for i, (server, usage) in enumerate(zip(windows_servers, windows_d_drive)):
+            meter_style = self.get_meter_style(usage)
+            meter = ttkb.Meter(
+                d_drive_meters_frame,
+                amountused=usage,
+                meterthickness=20,
+                bootstyle=meter_style,
+                interactive=False,
+                textfont=['Times', 16, 'bold'],
+                textright='%',
+                subtext=f"{server} (D:)",
+                subtextfont=['Times', 10, 'bold'],
+                subtextstyle="secondary"
+            )
+            meter.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=5, pady=5)
+            self.d_drive_meters.append(meter)
+
+    def get_colors(self, values):
+        """Determine bar colors based on percentage"""
+        colors = []
+        for val in values:
+            if val >= 95:
+                colors.append('red')
+            elif val >= 85:
+                colors.append('yellow')
+            else:
+                colors.append('lightgreen')
+        return colors
 
 
 if __name__ == '__main__':
