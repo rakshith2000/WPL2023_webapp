@@ -67,13 +67,13 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         style = ttkb.Style()
         style.configure('Overview.TButton', font=('Calibri', 14, 'bold'))
         
-        left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=180)
+        left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)
         left_pane.grid(row=1, column=0, sticky="ns")
         left_pane.grid_propagate(False)
 
         self.overview_btn = ttkb.Button(
             left_pane,
-            text="JDA",
+            text="JDA Overview",
             bootstyle="success",
             style='Overview.TButton',
             command=self.start_metrics_collection_thread
@@ -84,7 +84,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         self.main_area = ttkb.Frame(self, padding=(10, 10, 10, 10))
         self.main_area.grid(row=1, column=1, sticky="nsew")
         
-        self.content_frame = ScrolledFrame(self.main_area)
+        self.content_frame = ScrolledFrame(self.main_area, autohide=True)
         self.content_frame.pack(fill="both", expand=True)
         
         self.placeholder = ttkb.Label(
@@ -135,7 +135,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                           password=credentials['password'])
             
             # CPU Usage
-            metrics['cpu_usage'] = conn.Win32_Processor()[0].LoadPercentage
+            metrics['cpu_usage'] = 0 if conn.Win32_Processor()[0].LoadPercentage == None else conn.Win32_Processor()[0].LoadPercentage
             
             # RAM Usage
             total_ram = int(conn.Win32_ComputerSystem()[0].TotalPhysicalMemory)
@@ -297,12 +297,12 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         container_frame.pack(fill=tk.BOTH, expand=True)
         
         # Create CPU Usage frame
-        cpu_frame = ttkb.LabelFrame(container_frame, text="CPU Usage", bootstyle="primary")
-        cpu_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        cpu_frame = ttkb.LabelFrame(container_frame, text="CPU Usage", bootstyle="cosmo")
+        cpu_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=20)
         
         # Create RAM Usage frame
-        ram_frame = ttkb.LabelFrame(container_frame, text="RAM Usage", bootstyle="primary")
-        ram_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        ram_frame = ttkb.LabelFrame(container_frame, text="RAM Usage", bootstyle="cosmo")
+        ram_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=20)
         
         # Create plots for CPU Usage (Windows above Linux)
         self.create_metric_plots(cpu_frame, "CPU")
@@ -351,7 +351,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             elif val >= 85:
                 colors.append('yellow')
             else:
-                colors.append('green')
+                colors.append('lightgreen')
         return colors
 
     def update_plots_with_metrics(self):
