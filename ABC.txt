@@ -8,15 +8,226 @@ from datetime import datetime
 import threading
 from queue import Queue
 from concurrent.futures import ThreadPoolExecutor
-import pythoncom
+import pythoncom  # Import pythoncom for COM initialization
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 class SystemHealthCheckDashboard(ttkb.Frame):
-    # [Previous methods remain the same until create_plots()]
+    def __init__(self, master):
+        super().__init__(master)
+        self.pack(fill="both", expand=True)
+        user1 = "kosv1106" #Windows 6 servers
+        password1 = "c3RM21nvPx2&%32fsp93v"
+        
+        user2 = "kosv1388" #Linux servers
+        password2 = "M7!k28p&c30tyBt1"
+        
+        self.server_credentials = {
+            "USWIW1489": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1490": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1492": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1530": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1531": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1533": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW714": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW715": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW716": {"type": "Windows", "user": user1, "password": password1},
+            "USWIX733": {"type": "Linux", "user": user2, "password": password2},
+        }
 
+        # Configure grid layout
+        self.columnconfigure(0, weight=0)  # Left pane (fixed)
+        self.columnconfigure(1, weight=1)  # Right content area (expandable)
+        self.rowconfigure(0, weight=0)  # Header (fixed height)
+        self.rowconfigure(1, weight=1)  # Main area (expandable)
+
+        self.create_header()
+        self.create_left_pane()
+        self.create_main_area()
+        
+        self.server_details = {}  # To store collected metrics
+        self.canvases = []       # For matplotlib canvases
+        self.figures = []        # For matplotlib figures
+        self.axes = []           # For matplotlib axes
+
+    def create_header(self):
+        header_frame = ttkb.Frame(self, padding=10, bootstyle=PRIMARY)
+        header_frame.grid(row=0, column=0, columnspan=2, sticky="nsew")
+
+        header_lbl = ttkb.Label(
+            master=header_frame,
+            text="JDA Application Healthcheck Dashboard",
+            bootstyle=(PRIMARY, INVERSE),
+            font=("Helvetica", 18, "bold"),
+            anchor='center'
+        )
+        header_lbl.pack(fill="x", expand=True)
+
+    def create_left_pane(self):
+        style = ttkb.Style()
+        style.configure('Overview.TButton', font=('Calibri', 14, 'bold'))
+        
+        left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)
+        left_pane.grid(row=1, column=0, sticky="ns")
+        left_pane.grid_propagate(False)
+
+        self.overview_btn = ttkb.Button(
+            left_pane,
+            text="JDA Overview",
+            bootstyle="success",
+            style='Overview.TButton',
+            command=self.start_metrics_collection_thread
+        )
+        self.overview_btn.pack(fill="x", pady=(0, 20))
+        
+    def create_main_area(self):
+        self.main_area = ttkb.Frame(self, padding=(10, 10, 10, 10))
+        self.main_area.grid(row=1, column=1, sticky="nsew")
+        
+        self.content_frame = ScrolledFrame(self.main_area)
+        self.content_frame.pack(fill="both", expand=True)
+        
+        self.loading_label = ttkb.Label(
+            self.content_frame,
+            text="Click 'JDA Overview' to fetch server metrics",
+            font=("Calibri", 14, "bold"),
+            bootstyle=INFO
+        )
+        self.loading_label.pack(expand=True)
+        
+    def check_rdp_connectivity(self, server, port=3389):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        try:
+            result = sock.connect_ex((server, port))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
+        
+    def get_windows_metrics(self, server, credentials):
+        metrics = {
+            'ping': False,
+            'rdp': False,
+            'cpu_usage': 0,
+            'ram_usage': 0,
+            'C_drive': 0,
+            'D_drive': 0,
+            'status': 'offline'
+        }
+        
+        try:
+            pythoncom.CoInitialize()  # Initialize COM for this thread... # Check ping
+            ping_result = subprocess.run(['ping', '-n', '2', server], 
+                                       capture_output=True, 
+                                       text=True).returncode
+            metrics['ping'] = ping_result == 0
+            
+            if not metrics['ping']:
+                return {server: metrics}
+                
+            # Check RDP
+            metrics['rdp'] = self.check_rdp_connectivity(server)
+            
+            # Connect via WMI
+            conn = wmi.WMI(server, 
+                          user=credentials['user'], 
+                          password=credentials['password'])
+            
+            # CPU Usage
+            metrics['cpu_usage'] = conn.Win32_Processor()[0].LoadPercentage
+            
+            # RAM Usage
+            total_ram = int(conn.Win32_ComputerSystem()[0].TotalPhysicalMemory)
+            free_ram = int(conn.Win32_OperatingSystem()[0].FreePhysicalMemory) * 1024
+            metrics['ram_usage'] = round(((total_ram - free_ram) / total_ram) * 100, 1)
+            
+            # Drive Usage (C: and D:)
+            drives = conn.Win32_LogicalDisk(DriveType=3)
+            for drive in drives:
+                if drive.DeviceID == "C:":
+                    metrics['C_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
+                elif drive.DeviceID == "D:":
+                    metrics['D_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
+            
+            metrics['status'] = 'online'
+        except Exception as e:
+            print(f"Error getting metrics for {server}: {e}")
+        finally:
+            pythoncom.CoUninitialize()  # Clean up COM for this thread
+        
+        return {server: metrics}
+
+    def get_linux_metrics(self, server, credentials):
+        metrics = {
+            'ping': False,
+            'rdp': False,
+            'cpu_usage': 0,
+            'ram_usage': 0,
+            'C_drive': 0,
+            'D_drive': 0,
+            'status': 'offline'
+        }
+        # Linux metrics collection (similar logic, using paramiko or other tools)
+        return {server: metrics}
+
+    def get_metrics_worker(self, server, credentials):
+        if credentials["type"] == "Windows":
+            result = self.get_windows_metrics(server, credentials)
+        elif credentials["type"] == "Linux":
+            result = self.get_linux_metrics(server, credentials)
+        self.result_queue.put(result)
+        
+    def start_metrics_collection_thread(self):
+        """Start a thread to collect metrics."""
+        self.overview_btn.config(state="disabled")
+        threading.Thread(target=self.update_all_metrics).start()
+
+    def update_all_metrics(self):
+        # Clear previous metrics
+        self.server_details = {}
+        
+        # Use ThreadPoolExecutor to fetch metrics in parallel in a worker thread
+        self.result_queue = Queue()
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            for server, credentials in self.server_credentials.items():
+                executor.submit(self.get_metrics_worker, server, credentials)
+
+        # Schedule periodic checking of the queue to update the UI once metrics are collected
+        self.after(100, self.check_metrics_queue)
+
+    def check_metrics_queue(self):
+        try:
+            while not self.result_queue.empty():
+                result = self.result_queue.get_nowait()
+                self.server_details.update(result)
+            
+            # If all metrics are collected, update the UI
+            if len(self.server_details) == len(self.server_credentials):
+                self.update_gui_after_metrics()
+            else:
+                # If still waiting, check again after a small delay
+                self.after(100, self.check_metrics_queue)
+        except Exception as e:
+            print(f"Error while processing metrics: {e}")
+        finally:
+            self.overview_btn.config(state="normal")
+
+    def update_gui_after_metrics(self):
+        self.display_metrics()
+
+    def display_metrics(self):
+        # Clear previous content
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+            
+        # Create plots
+        self.create_plots()
+        # Update plots with actual data
+        self.update_plots_with_metrics()
+        
     def create_plots(self):
-        """Initialize the empty plots with equal width frames"""
+        """Initialize the empty plots"""
         self.canvases = []
         self.figures = []
         self.axes = []
@@ -25,20 +236,12 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         container_frame = ttkb.Frame(self.content_frame)
         container_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Configure equal columns in the container
-        container_frame.columnconfigure(0, weight=1, uniform="equal")
-        container_frame.columnconfigure(1, weight=1, uniform="equal")
-        
-        # Create frames for Windows and Linux servers with equal width
+        # Create frames for Windows and Linux servers
         windows_frame = ttkb.LabelFrame(container_frame, text="Windows Servers", bootstyle="info")
-        windows_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        windows_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         linux_frame = ttkb.LabelFrame(container_frame, text="Linux Servers", bootstyle="danger")
-        linux_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
-        
-        # Make both frames expand equally
-        windows_frame.grid_propagate(False)
-        linux_frame.grid_propagate(False)
+        linux_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Create plots for Windows servers
         self.create_server_type_plots(windows_frame, "Windows")
@@ -48,36 +251,112 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         
         # Create plots for Linux servers
         self.create_server_type_plots(linux_frame, "Linux")
-
+        
     def create_server_type_plots(self, parent_frame, server_type):
         """Create CPU and RAM plots for a specific server type"""
-        # Configure grid for equal distribution
-        parent_frame.rowconfigure(0, weight=1)
-        parent_frame.rowconfigure(1, weight=1)
-        
         # CPU Plot
-        fig_cpu, ax_cpu = plt.subplots(figsize=(6, 2.5))  # Slightly smaller to fit side by side
+        fig_cpu, ax_cpu = plt.subplots(figsize=(8, 3))
         self.figures.append(fig_cpu)
         self.axes.append(ax_cpu)
         
         canvas_cpu = FigureCanvasTkAgg(fig_cpu, master=parent_frame)
         canvas_cpu.draw()
         widget_cpu = canvas_cpu.get_tk_widget()
-        widget_cpu.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        widget_cpu.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.canvases.append(canvas_cpu)
         
         # RAM Plot
-        fig_ram, ax_ram = plt.subplots(figsize=(6, 2.5))  # Slightly smaller to fit side by side
+        fig_ram, ax_ram = plt.subplots(figsize=(8, 3))
         self.figures.append(fig_ram)
         self.axes.append(ax_ram)
         
         canvas_ram = FigureCanvasTkAgg(fig_ram, master=parent_frame)
         canvas_ram.draw()
         widget_ram = canvas_ram.get_tk_widget()
-        widget_ram.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        widget_ram.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.canvases.append(canvas_ram)
 
-    # [Rest of the methods remain the same]
+    def get_colors(self, values):
+        """Determine bar colors based on percentage"""
+        colors = []
+        for val in values:
+            if val >= 95:
+                colors.append('red')
+            elif val >= 85:
+                colors.append('yellow')
+            else:
+                colors.append('green')
+        return colors
+
+    def update_plots_with_metrics(self):
+        """Update all plots with actual metrics data"""
+        # Separate Windows and Linux servers
+        windows_servers = []
+        windows_cpu = []
+        windows_ram = []
+        
+        linux_servers = []
+        linux_cpu = []
+        linux_ram = []
+        
+        for server, metrics in self.server_details.items():
+            if self.server_credentials[server]["type"] == "Windows":
+                windows_servers.append(server)
+                windows_cpu.append(metrics['cpu_usage'])
+                windows_ram.append(metrics['ram_usage'])
+            else:
+                linux_servers.append(server)
+                linux_cpu.append(metrics['cpu_usage'])
+                linux_ram.append(metrics['ram_usage'])
+        
+        # Clear previous plots
+        for ax in self.axes:
+            ax.clear()
+        
+        # Update Windows server plots (first two axes)
+        if windows_servers:
+            # CPU Usage Plot (Vertical Bar)
+            cpu_colors = self.get_colors(windows_cpu)
+            self.axes[0].barh(windows_servers, windows_cpu, color=cpu_colors, edgecolor='white', linewidth=0.5)
+            self.axes[0].set_title("Windows CPU Usage (%)", fontweight="bold")
+            self.axes[0].set_xlim(0, 100)
+            self.axes[0].grid(axis='x', linestyle='--', alpha=0.7)
+            for i, val in enumerate(windows_cpu):
+                self.axes[0].text(val + 1, i, f"{val}%", va='center')
+
+            # RAM Usage Plot (Horizontal Bar)
+            ram_colors = self.get_colors(windows_ram)
+            self.axes[1].barh(windows_servers, windows_ram, color=ram_colors, edgecolor='white', linewidth=0.5)
+            self.axes[1].set_title("Windows RAM Usage (%)", fontweight="bold")
+            self.axes[1].set_xlim(0, 100)
+            self.axes[1].grid(axis='x', linestyle='--', alpha=0.7)
+            for i, val in enumerate(windows_ram):
+                self.axes[1].text(val + 1, i, f"{val}%", va='center')
+        
+        # Update Linux server plots (next two axes)
+        if linux_servers:
+            # CPU Usage Plot (Vertical Bar)
+            cpu_colors = self.get_colors(linux_cpu)
+            self.axes[2].barh(linux_servers, linux_cpu, color=cpu_colors, edgecolor='white', linewidth=0.5)
+            self.axes[2].set_title("Linux CPU Usage (%)", fontweight="bold")
+            self.axes[2].set_xlim(0, 100)
+            self.axes[2].grid(axis='x', linestyle='--', alpha=0.7)
+            for i, val in enumerate(linux_cpu):
+                self.axes[2].text(val + 1, i, f"{val}%", va='center')
+
+            # RAM Usage Plot (Horizontal Bar)
+            ram_colors = self.get_colors(linux_ram)
+            self.axes[3].barh(linux_servers, linux_ram, color=ram_colors, edgecolor='white', linewidth=0.5)
+            self.axes[3].set_title("Linux RAM Usage (%)", fontweight="bold")
+            self.axes[3].set_xlim(0, 100)
+            self.axes[3].grid(axis='x', linestyle='--', alpha=0.7)
+            for i, val in enumerate(linux_ram):
+                self.axes[3].text(val + 1, i, f"{val}%", va='center')
+
+        # Redraw all canvases
+        for canvas in self.canvases:
+            canvas.draw()
+
 
 if __name__ == '__main__':
     app = ttkb.Window("Health Check Dashboard", "yeti")
