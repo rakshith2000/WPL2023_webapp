@@ -1,17 +1,144 @@
-{'10.20.33.4': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 8.0, 'ram_usage': 61.2, 'ram_detailed': {'total': 4.56, 'used': 2.79}, 'C_drive': 44.5, 'C_detailed': {'total':
- 7.61, 'used': 3.39}, 'D_drive': 0, 'D_detailed': {'total': 0, 'used': 0}, 'status': 'offline', 'rdp': True}, 'USWIW1489': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 4,
-'ram_usage': 66.5, 'ram_detailed': {'total': 32.0, 'used': 21.28}, 'C_drive': 55.8, 'C_detailed': {'total': 99.4, 'used': 55.5}, 'D_drive': 29.1, 'D_detailed': {'total': 20
-0.0, 'used': 58.18}, 'status': 'online', 'rdp': True}, 'USWIW1490': {'ping': True, 'rdp/ssh': False, 'cpu_usage': None, 'ram_usage': 67.9, 'ram_detailed': {'total': 32.0, '
-used': 21.72}, 'C_drive': 50.1, 'C_detailed': {'total': 99.4, 'used': 49.76}, 'D_drive': 30.6, 'D_detailed': {'total': 199.98, 'used': 61.18}, 'status': 'online', 'rdp': Tr
-ue}, 'USWIW1492': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 2, 'ram_usage': 28.5, 'ram_detailed': {'total': 64.0, 'used': 18.22}, 'C_drive': 37.3, 'C_detailed': {'total
-': 99.4, 'used': 37.1}, 'D_drive': 39.3, 'D_detailed': {'total': 199.98, 'used': 78.63}, 'status': 'online', 'rdp': True}, 'USWIW1530': {'ping': True, 'rdp/ssh': False, 'cp
-u_usage': 2, 'ram_usage': 86.4, 'ram_detailed': {'total': 32.0, 'used': 27.65}, 'C_drive': 63.8, 'C_detailed': {'total': 99.4, 'used': 63.43}, 'D_drive': 21.7, 'D_detailed'
-: {'total': 199.98, 'used': 43.46}, 'status': 'online', 'rdp': True}, 'USWIW1531': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 1, 'ram_usage': 86.8, 'ram_detailed': {'tot
-al': 32.0, 'used': 27.77}, 'C_drive': 53.8, 'C_detailed': {'total': 99.4, 'used': 53.49}, 'D_drive': 22.1, 'D_detailed': {'total': 199.98, 'used': 44.11}, 'status': 'online
-', 'rdp': True}, 'USWIW1533': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 11, 'ram_usage': 33.6, 'ram_detailed': {'total': 64.0, 'used': 21.48}, 'C_drive': 49.0, 'C_detai
-led': {'total': 99.4, 'used': 48.67}, 'D_drive': 96.3, 'D_detailed': {'total': 199.98, 'used': 192.66}, 'status': 'online', 'rdp': True}, 'USWIW714': {'ping': True, 'rdp/ss
-h': False, 'cpu_usage': 0, 'ram_usage': 0, 'ram_detailed': {'total': 0, 'used': 0}, 'C_drive': 0, 'C_detailed': {'total': 0, 'used': 0}, 'D_drive': 0, 'D_detailed': {'total
-': 0, 'used': 0}, 'status': 'offline', 'rdp': False}, 'USWIW715': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 0, 'ram_usage': 0, 'ram_detailed': {'total': 0, 'used': 0},
-'C_drive': 0, 'C_detailed': {'total': 0, 'used': 0}, 'D_drive': 0, 'D_detailed': {'total': 0, 'used': 0}, 'status': 'offline', 'rdp': False}, 'USWIW716': {'ping': True, 'rd
-p/ssh': False, 'cpu_usage': 0, 'ram_usage': 0, 'ram_detailed': {'total': 0, 'used': 0}, 'C_drive': 0, 'C_detailed': {'total': 0, 'used': 0}, 'D_drive': 0, 'D_detailed': {'t
-otal': 0, 'used': 0}, 'status': 'offline', 'rdp': False}}
+import ttkbootstrap as ttkb
+from ttkbootstrap.constants import *
+from tkinter import messagebox
+import pandas as pd
+from tkinter import filedialog
+
+class SystemHealthCheckDashboard(ttkb.Frame):
+    def __init__(self, master):
+        super().__init__(master)
+        self.pack(fill="both", expand=True)
+        
+        # Initialize the server details dictionary with the given data
+        self.server_details = {
+            '10.20.33.4': {'status': 'offline', 'type': 'Linux', 'ping': True, 'ram_usage': 61.2, 'ram_detailed': {'total': 4.56, 'used': 2.79}, 'C_drive': 44.5, 'C_detailed': {'total': 7.61, 'used': 3.39}, 'D_drive': 0, 'D_detailed': {'total': 0, 'used': 0}},
+            'USWIW1489': {'status': 'online', 'type': 'Windows', 'ping': True, 'ram_usage': 66.5, 'ram_detailed': {'total': 32.0, 'used': 21.28}, 'C_drive': 55.8, 'C_detailed': {'total': 99.4, 'used': 55.5}, 'D_drive': 29.1, 'D_detailed': {'total': 200.0, 'used': 58.18}},
+            'USWIW1490': {'status': 'online', 'type': 'Windows', 'ping': True, 'ram_usage': 67.9, 'ram_detailed': {'total': 32.0, 'used': 21.72}, 'C_drive': 50.1, 'C_detailed': {'total': 99.4, 'used': 49.76}, 'D_drive': 30.6, 'D_detailed': {'total': 199.98, 'used': 61.18}},
+            'USWIW1492': {'status': 'online', 'type': 'Windows', 'ping': True, 'ram_usage': 28.5, 'ram_detailed': {'total': 64.0, 'used': 18.22}, 'C_drive': 37.3, 'C_detailed': {'total': 99.4, 'used': 37.1}, 'D_drive': 39.3, 'D_detailed': {'total': 199.98, 'used': 78.63}},
+            'USWIW1530': {'status': 'online', 'type': 'Windows', 'ping': True, 'ram_usage': 86.4, 'ram_detailed': {'total': 32.0, 'used': 27.65}, 'C_drive': 63.8, 'C_detailed': {'total': 99.4, 'used': 63.43}, 'D_drive': 21.7, 'D_detailed': {'total': 199.98, 'used': 43.46}},
+            'USWIW1531': {'status': 'online', 'type': 'Windows', 'ping': True, 'ram_usage': 86.8, 'ram_detailed': {'total': 32.0, 'used': 27.77}, 'C_drive': 53.8, 'C_detailed': {'total': 99.4, 'used': 53.49}, 'D_drive': 22.1, 'D_detailed': {'total': 199.98, 'used': 44.11}},
+            'USWIW1533': {'status': 'online', 'type': 'Windows', 'ping': True, 'ram_usage': 33.6, 'ram_detailed': {'total': 64.0, 'used': 21.48}, 'C_drive': 49.0, 'C_detailed': {'total': 99.4, 'used': 48.67}, 'D_drive': 96.3, 'D_detailed': {'total': 199.98, 'used': 192.66}},
+            'USWIW714': {'status': 'offline', 'type': 'Windows', 'ping': True, 'ram_usage': 0.0, 'ram_detailed': {'total': 0, 'used': 0}, 'C_drive': 0.0, 'C_detailed': {'total': 0, 'used': 0}, 'D_drive': 0.0, 'D_detailed': {'total': 0, 'used': 0}},
+            'USWIW715': {'status': 'offline', 'type': 'Windows', 'ping': True, 'ram_usage': 0.0, 'ram_detailed': {'total': 0, 'used': 0}, 'C_drive': 0.0, 'C_detailed': {'total': 0, 'used': 0}, 'D_drive': 0.0, 'D_detailed': {'total': 0, 'used': 0}},
+            'USWIW716': {'status': 'offline', 'type': 'Windows', 'ping': True, 'ram_usage': 0.0, 'ram_detailed': {'total': 0, 'used': 0}, 'C_drive': 0.0, 'C_detailed': {'total': 0, 'used': 0}, 'D_drive': 0.0, 'D_detailed': {'total': 0, 'used': 0}}
+        }
+
+    def display_metrics(self):
+        # Clear previous content
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+
+        # Create the table view with dropdowns and status icons
+        self.create_table_view()
+
+    def create_table_view(self):
+        # Create search bar and export button
+        search_frame = ttkb.Frame(self.content_frame, padding=(10, 5))
+        search_frame.pack(fill="x", padx=5, pady=5)
+        
+        # Search Box
+        search_label = ttkb.Label(search_frame, text="Search:", bootstyle=INFO)
+        search_label.pack(side="left", padx=5)
+        self.search_var = ttkb.StringVar()
+        search_entry = ttkb.Entry(search_frame, textvariable=self.search_var, bootstyle=INFO)
+        search_entry.pack(side="left", fill="x", expand=True, padx=5)
+        search_button = ttkb.Button(search_frame, text="Search", bootstyle="success", command=self.search_table)
+        search_button.pack(side="right", padx=5)
+
+        # Export Button
+        export_button = ttkb.Button(search_frame, text="Export Data", bootstyle="primary", command=self.export_data)
+        export_button.pack(side="right", padx=5)
+
+        # Create table header
+        columns = ['Server', 'Status', 'RAM Usage', 'C Drive Usage', 'D Drive Usage']
+        
+        self.table_frame = ttkb.Frame(self.content_frame)
+        self.table_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Create Treeview (Table)
+        self.tree = ttkb.Treeview(self.table_frame, columns=columns, show="headings", bootstyle="dark")
+        self.tree.pack(fill="both", expand=True)
+        
+        # Define headings
+        for col in columns:
+            self.tree.heading(col, text=col)
+        
+        # Define column widths
+        self.tree.column("Server", width=200)
+        self.tree.column("Status", width=50)
+        self.tree.column("RAM Usage", width=150)
+        self.tree.column("C Drive Usage", width=150)
+        self.tree.column("D Drive Usage", width=150)
+        
+        # Populate table rows
+        for server, metrics in self.server_details.items():
+            status_icon = '🟢' if metrics['status'] == 'online' else '🔴'
+            self.tree.insert("", "end", values=(
+                server,
+                status_icon,
+                self.create_dropdown(metrics, 'ram_usage'),
+                self.create_dropdown(metrics, 'C_drive'),
+                self.create_dropdown(metrics, 'D_drive')
+            ))
+
+    def create_dropdown(self, metrics, metric_type):
+        """Creates a dropdown with total/used space for RAM, C drive, or D drive."""
+        usage_percentage = None
+        if metric_type == 'ram_usage':
+            usage_percentage = metrics['ram_usage']
+            total = f"Total: {metrics['ram_detailed']['total']} GB"
+            used = f"Used: {metrics['ram_detailed']['used']} GB"
+        elif metric_type == 'C_drive':
+            usage_percentage = metrics['C_drive']
+            total = f"Total: {metrics['C_detailed']['total']} GB"
+            used = f"Used: {metrics['C_detailed']['used']} GB"
+        elif metric_type == 'D_drive':
+            usage_percentage = metrics['D_drive']
+            total = f"Total: {metrics['D_detailed']['total']} GB"
+            used = f"Used: {metrics['D_detailed']['used']} GB"
+
+        # Creating dropdown button with total and used info
+        drop_button = ttkb.Button(self.table_frame, text=f"{usage_percentage}%", bootstyle="info", 
+                                  command=lambda: self.show_details(metric_type, total, used))
+        return drop_button
+
+    def show_details(self, metric_type, total, used):
+        """Display details in a message box when dropdown button is clicked"""
+        messagebox.showinfo(f"{metric_type} Details", f"{total}\n{used}")
+    
+    def search_table(self):
+        """Search function to filter the table rows based on the search entry"""
+        search_term = self.search_var.get().lower()
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        # Re-populate filtered table
+        for server, metrics in self.server_details.items():
+            if search_term in server.lower():
+                status_icon = '🟢' if metrics['status'] == 'online' else '🔴'
+                self.tree.insert("", "end", values=(
+                    server,
+                    status_icon,
+                    self.create_dropdown(metrics, 'ram_usage'),
+                    self.create_dropdown(metrics, 'C_drive'),
+                    self.create_dropdown(metrics, 'D_drive')
+                ))
+                
+    def export_data(self):
+        """Export table data to CSV"""
+        file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV Files", "*.csv")])
+        if not file_path:
+            return
+        
+        # Collect the data into a dataframe
+        data = []
+        for item in self.tree.get_children():
+            data.append(self.tree.item(item)["values"])
+        
+        df = pd.DataFrame(data, columns=['Server', 'Status', 'RAM Usage', 'C Drive Usage', 'D Drive Usage'])
+        
+        try:
+            df.to_csv(file_path, index=False)
+            messagebox.showinfo("Export", f"Data successfully exported to {file_path}")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"An error occurred: {e}")
