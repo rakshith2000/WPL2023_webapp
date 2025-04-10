@@ -1,162 +1,17 @@
-    def display_metrics(self):
-        # Clear previous content
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
-            
-        # Create server details table
-        self.create_server_details_table()
-        
-        # Create plots below the table
-        self.create_plots()
-        self.update_plots_with_metrics()
-
-    def create_server_details_table(self):
-        """Create a table showing server details with expandable rows"""
-        table_frame = ttkb.Frame(self.content_frame)
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Create Treeview with style
-        style = ttkb.Style()
-        style.configure("Treeview.Heading", font=('Calibri', 12, 'bold'))
-        style.configure("Treeview", font=('Calibri', 11), rowheight=30)
-        
-        columns = ("server", "type", "status", "cpu", "ram", "c_drive", "d_drive")
-        self.tree = ttkb.Treeview(
-            table_frame,
-            columns=columns,
-            show="headings",
-            bootstyle="primary",
-            height=len(self.server_details)
-        )
-        
-        # Configure headings
-        self.tree.heading("server", text="Server", anchor=tk.W)
-        self.tree.heading("type", text="Type", anchor=tk.W)
-        self.tree.heading("status", text="Status", anchor=tk.W)
-        self.tree.heading("cpu", text="CPU Usage", anchor=tk.W)
-        self.tree.heading("ram", text="RAM Usage", anchor=tk.W)
-        self.tree.heading("c_drive", text="C: Drive", anchor=tk.W)
-        self.tree.heading("d_drive", text="D: Drive", anchor=tk.W)
-        
-        # Configure column widths
-        self.tree.column("server", width=150, anchor=tk.W)
-        self.tree.column("type", width=80, anchor=tk.W)
-        self.tree.column("status", width=80, anchor=tk.W)
-        self.tree.column("cpu", width=100, anchor=tk.W)
-        self.tree.column("ram", width=120, anchor=tk.W)
-        self.tree.column("c_drive", width=120, anchor=tk.W)
-        self.tree.column("d_drive", width=120, anchor=tk.W)
-        
-        # Add scrollbar
-        scrollbar = ttkb.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.tree.pack(fill=tk.BOTH, expand=True)
-        
-        # Insert data into the table
-        for server, metrics in self.server_details.items():
-            status_icon = "🟢" if metrics['status'] == 'online' else "🔴"
-            
-            # Main row data
-            main_row = [
-                server,
-                self.server_credentials[server]["type"],
-                status_icon,
-                f"{metrics['cpu_usage']}%",
-                self.create_expandable_button("ram", metrics),
-                self.create_expandable_button("c_drive", metrics),
-                self.create_expandable_button("d_drive", metrics) if self.server_credentials[server]["type"] == "Windows" else "N/A"
-            ]
-            
-            self.tree.insert("", tk.END, values=main_row, iid=server)
-            
-            # Add child rows for detailed info
-            self.add_child_row(server, "ram", metrics)
-            self.add_child_row(server, "c_drive", metrics)
-            if self.server_credentials[server]["type"] == "Windows":
-                self.add_child_row(server, "d_drive", metrics)
-        
-        # Bind click event to toggle child rows
-        self.tree.bind("<Button-1>", self.on_tree_click)
-
-    def create_expandable_button(self, metric_type, metrics):
-        """Create text for expandable button"""
-        if metric_type == "ram":
-            usage = metrics['ram_usage']
-            return f"▼ {usage}%"
-        elif metric_type == "c_drive":
-            usage = metrics['C_drive']
-            return f"▼ {usage}%"
-        elif metric_type == "d_drive":
-            usage = metrics['D_drive']
-            return f"▼ {usage}%"
-        return "N/A"
-
-    def add_child_row(self, parent_id, metric_type, metrics):
-        """Add child row with detailed information"""
-        if metric_type == "ram":
-            details = metrics['ram_detailed']
-            values = [
-                "", "", "", "",
-                f"Total: {details['total']} GB\nUsed: {details['used']} GB",
-                "", ""
-            ]
-        elif metric_type == "c_drive":
-            details = metrics['C_detailed']
-            values = [
-                "", "", "", "", "",
-                f"Total: {details['total']} GB\nUsed: {details['used']} GB",
-                ""
-            ]
-        elif metric_type == "d_drive":
-            details = metrics['D_detailed']
-            values = [
-                "", "", "", "", "", "",
-                f"Total: {details['total']} GB\nUsed: {details['used']} GB"
-            ]
-        
-        child_id = f"{parent_id}_{metric_type}"
-        self.tree.insert(parent_id, tk.END, values=values, iid=child_id)
-        self.tree.item(child_id, open=False)  # Start with child rows collapsed
-
-    def on_tree_click(self, event):
-        """Handle clicks on treeview items"""
-        region = self.tree.identify("region", event.x, event.y)
-        if region == "cell":
-            item = self.tree.identify_row(event.y)
-            column = self.tree.identify_column(event.x)
-            
-            # Check if click was on an expandable button
-            if column == "#5":  # RAM column
-                self.toggle_child_rows(item, "ram")
-            elif column == "#6":  # C Drive column
-                self.toggle_child_rows(item, "c_drive")
-            elif column == "#7":  # D Drive column
-                self.toggle_child_rows(item, "d_drive")
-
-    def toggle_child_rows(self, item, metric_type):
-        """Toggle visibility of child rows"""
-        child_id = f"{item}_{metric_type}"
-        if self.tree.exists(child_id):
-            if self.tree.item(child_id, "open"):
-                self.tree.item(child_id, open=False)
-                # Update button text
-                values = list(self.tree.item(item, "values"))
-                if metric_type == "ram":
-                    values[4] = values[4].replace("▲", "▼")
-                elif metric_type == "c_drive":
-                    values[5] = values[5].replace("▲", "▼")
-                elif metric_type == "d_drive":
-                    values[6] = values[6].replace("▲", "▼")
-                self.tree.item(item, values=values)
-            else:
-                self.tree.item(child_id, open=True)
-                # Update button text
-                values = list(self.tree.item(item, "values"))
-                if metric_type == "ram":
-                    values[4] = values[4].replace("▼", "▲")
-                elif metric_type == "c_drive":
-                    values[5] = values[5].replace("▼", "▲")
-                elif metric_type == "d_drive":
-                    values[6] = values[6].replace("▼", "▲")
-                self.tree.item(item, values=values)
+{'10.20.33.4': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 8.0, 'ram_usage': 61.2, 'ram_detailed': {'total': 4.56, 'used': 2.79}, 'C_drive': 44.5, 'C_detailed': {'total':
+ 7.61, 'used': 3.39}, 'D_drive': 0, 'D_detailed': {'total': 0, 'used': 0}, 'status': 'offline', 'rdp': True}, 'USWIW1489': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 4,
+'ram_usage': 66.5, 'ram_detailed': {'total': 32.0, 'used': 21.28}, 'C_drive': 55.8, 'C_detailed': {'total': 99.4, 'used': 55.5}, 'D_drive': 29.1, 'D_detailed': {'total': 20
+0.0, 'used': 58.18}, 'status': 'online', 'rdp': True}, 'USWIW1490': {'ping': True, 'rdp/ssh': False, 'cpu_usage': None, 'ram_usage': 67.9, 'ram_detailed': {'total': 32.0, '
+used': 21.72}, 'C_drive': 50.1, 'C_detailed': {'total': 99.4, 'used': 49.76}, 'D_drive': 30.6, 'D_detailed': {'total': 199.98, 'used': 61.18}, 'status': 'online', 'rdp': Tr
+ue}, 'USWIW1492': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 2, 'ram_usage': 28.5, 'ram_detailed': {'total': 64.0, 'used': 18.22}, 'C_drive': 37.3, 'C_detailed': {'total
+': 99.4, 'used': 37.1}, 'D_drive': 39.3, 'D_detailed': {'total': 199.98, 'used': 78.63}, 'status': 'online', 'rdp': True}, 'USWIW1530': {'ping': True, 'rdp/ssh': False, 'cp
+u_usage': 2, 'ram_usage': 86.4, 'ram_detailed': {'total': 32.0, 'used': 27.65}, 'C_drive': 63.8, 'C_detailed': {'total': 99.4, 'used': 63.43}, 'D_drive': 21.7, 'D_detailed'
+: {'total': 199.98, 'used': 43.46}, 'status': 'online', 'rdp': True}, 'USWIW1531': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 1, 'ram_usage': 86.8, 'ram_detailed': {'tot
+al': 32.0, 'used': 27.77}, 'C_drive': 53.8, 'C_detailed': {'total': 99.4, 'used': 53.49}, 'D_drive': 22.1, 'D_detailed': {'total': 199.98, 'used': 44.11}, 'status': 'online
+', 'rdp': True}, 'USWIW1533': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 11, 'ram_usage': 33.6, 'ram_detailed': {'total': 64.0, 'used': 21.48}, 'C_drive': 49.0, 'C_detai
+led': {'total': 99.4, 'used': 48.67}, 'D_drive': 96.3, 'D_detailed': {'total': 199.98, 'used': 192.66}, 'status': 'online', 'rdp': True}, 'USWIW714': {'ping': True, 'rdp/ss
+h': False, 'cpu_usage': 0, 'ram_usage': 0, 'ram_detailed': {'total': 0, 'used': 0}, 'C_drive': 0, 'C_detailed': {'total': 0, 'used': 0}, 'D_drive': 0, 'D_detailed': {'total
+': 0, 'used': 0}, 'status': 'offline', 'rdp': False}, 'USWIW715': {'ping': True, 'rdp/ssh': False, 'cpu_usage': 0, 'ram_usage': 0, 'ram_detailed': {'total': 0, 'used': 0},
+'C_drive': 0, 'C_detailed': {'total': 0, 'used': 0}, 'D_drive': 0, 'D_detailed': {'total': 0, 'used': 0}, 'status': 'offline', 'rdp': False}, 'USWIW716': {'ping': True, 'rd
+p/ssh': False, 'cpu_usage': 0, 'ram_usage': 0, 'ram_detailed': {'total': 0, 'used': 0}, 'C_drive': 0, 'C_detailed': {'total': 0, 'used': 0}, 'D_drive': 0, 'D_detailed': {'t
+otal': 0, 'used': 0}, 'status': 'offline', 'rdp': False}}
