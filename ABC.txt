@@ -1,689 +1,80 @@
-import ttkbootstrap as ttkb
-from ttkbootstrap.constants import *
-from ttkbootstrap.style import Style
-from ttkbootstrap.scrolled import ScrolledFrame
-import tkinter as tk
-from tkinter import ttk
-import psutil, wmi, socket, platform, subprocess, paramiko, re
-from datetime import datetime
-import threading
-from queue import Queue
-from concurrent.futures import ThreadPoolExecutor
-import pythoncom
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.colors import LinearSegmentedColormap
-
-class SystemHealthCheckDashboard(ttkb.Frame):
-    def __init__(self, master):
-        super().__init__(master)
-        self.pack(fill="both", expand=True)
-        user1 = "kosv1106" #Windows 6 servers
-        password1 = "c3RM21nvPx2&%32fsp93v"
-        
-        user2 = "kohelr" #Linux servers
-        password2 = "Avaya_2025"
-        
-        self.server_credentials = {
-            "USWIW1489": {"type": "Windows", "user": user1, "password": password1},
-            "USWIW1490": {"type": "Windows", "user": user1, "password": password1},
-            "USWIW1492": {"type": "Windows", "user": user1, "password": password1},
-            "USWIW1530": {"type": "Windows", "user": user1, "password": password1},
-            "USWIW1531": {"type": "Windows", "user": user1, "password": password1},
-            "USWIW1533": {"type": "Windows", "user": user1, "password": password1},
-            "USWIW714": {"type": "Windows", "user": user1, "password": password1},
-            "USWIW715": {"type": "Windows", "user": user1, "password": password1},
-            "USWIW716": {"type": "Windows", "user": user1, "password": password1},
-            "10.20.33.4": {"type": "Linux", "user": user2, "password": password2},
-        }
-
-        # Configure grid layout
-        self.columnconfigure(0, weight=0)  # Left pane (fixed)
-        self.columnconfigure(1, weight=1)  # Right content area (expandable)
-        self.rowconfigure(0, weight=0)  # Header (fixed height)
-        self.rowconfigure(1, weight=1)  # Main area (expandable)
-        
-        self.cmap_red_yellow_green = LinearSegmentedColormap.from_list(
-            'ryg', ['#4caf50', '#ffeb3b', '#f44336'])
-        self.create_header()
-        self.create_left_pane()
-        self.create_main_area()
-        
-        self.server_details = {}  # To store collected metrics
-        self.canvases = []       # For matplotlib canvases
-        self.figures = []        # For matplotlib figures
-        self.axes = []           # For matplotlib axes
-        self.c_drive_meters = []  # To store C drive meter widgets
-        self.d_drive_meters = []  # To store D drive meter widgets
-        
-        plt.style.use('seaborn')
-        #plt.rcParams['axes.facecolor'] = '#f5f5f5'
-
-    def create_header(self):
-        header_frame = ttkb.Frame(self, padding=10, bootstyle=PRIMARY)
-        header_frame.grid(row=0, column=0, columnspan=2, sticky="nsew")
-
-        header_lbl = ttkb.Label(
-            master=header_frame,
-            text="JDA Application Healthcheck Dashboard",
-            bootstyle=(PRIMARY, INVERSE),
-            font=("Helvetica", 18, "bold"),
-            anchor='center'
-        )
-        header_lbl.pack(fill="x", expand=True)
-
-    def create_left_pane(self):
-        style = ttkb.Style()
-        style.configure('Overview.TButton', font=('Calibri', 14, 'bold'))
-        
-        left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)
-        left_pane.grid(row=1, column=0, sticky="ns")
-        left_pane.grid_propagate(False)
-
-        self.overview_btn = ttkb.Button(
-            left_pane,
-            text="JDA Overview",
-            bootstyle="success",
-            style='Overview.TButton',
-            command=self.start_metrics_collection_thread
-        )
-        self.overview_btn.pack(fill="x", pady=(0, 20))
-        
-    def create_main_area(self):
-        self.main_area = ttkb.Frame(self, padding=(10, 10, 10, 10), )
-        self.main_area.grid(row=1, column=1, sticky="nsew")
-        
-        self.content_frame = ScrolledFrame(self.main_area, autohide=True, bootstyle=LIGHT)
-        self.content_frame.pack(fill="both", expand=True)
-        
-        self.placeholder = ttkb.Label(
-            self.content_frame,
-            text="Click 'JDA Overview' to fetch server metrics",
-            font=("Calibri", 14, "bold"),
-            bootstyle=INFO
-        )
-        self.placeholder.pack(expand=True)
-        
-    def check_rdp_connectivity(self, server, port=3389):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(5)
-        try:
-            result = sock.connect_ex((server, port))
-            sock.close()
-            return result == 0
-        except Exception:
-            return False
-        
-    def get_windows_metrics(self, server, credentials):
-        metrics = {
-            'ping': False,
-            'rdp/ssh': False,
-            'cpu_usage': 0,
-            'ram_usage': 0,
-            'ram_detailed': {'total': 0, 'used': 0},
-            'C_drive': 0,
-            'C_detailed': {'total': 0, 'used': 0},
-            'D_drive': 0,
-            'D_detailed': {'total': 0, 'used': 0},
-            'uptime': 0,
-            'status': 'Offline'
-        }
-        
-        try:
-            pythoncom.CoInitialize()  # Initialize COM for this thread... # Check ping
-            ping_result = subprocess.run(['ping', '-n', '2', server], 
-                                       capture_output=True, 
-                                       text=True).returncode
-            metrics['ping'] = ping_result == 0
+    def export_to_csv(self):
+        """Export the collected metrics to a CSV file with file dialog for path selection"""
+        if not self.server_details:
+            return
             
-            if not metrics['ping']:
-                return {server: metrics}
+        # Create a file dialog to get the save path
+        file_path = ttkb.dialogs.dialogs.SaveFileDialog(
+            title="Save Metrics as CSV",
+            initialfile=f"server_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            filetypes=[('CSV Files', '*.csv')],
+            parent=self
+        ).show()
+        
+        # If user canceled the dialog
+        if not file_path:
+            return
+            
+        # Ensure the file has .csv extension
+        if not file_path.lower().endswith('.csv'):
+            file_path += '.csv'
+        
+        try:
+            with open(file_path, 'w', newline='') as csvfile:
+                fieldnames = [
+                    'Server', 'Status', 'Type', 'Ping', 'RDP/SSH', 
+                    'CPU Usage (%)', 'RAM Usage (%)', 'RAM Total (GB)', 'RAM Used (GB)',
+                    'C Drive Usage (%)', 'C Drive Total (GB)', 'C Drive Used (GB)',
+                    'D Drive Usage (%)', 'D Drive Total (GB)', 'D Drive Used (GB)',
+                    'Uptime (days)'
+                ]
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
                 
-            # Check RDP
-            metrics['rdp/ssh'] = self.check_rdp_connectivity(server)
-            
-            # Connect via WMI
-            conn = wmi.WMI(server, 
-                          user=credentials['user'], 
-                          password=credentials['password'])
-            
-            # CPU Usage
-            metrics['cpu_usage'] = 0 if conn.Win32_Processor()[0].LoadPercentage == None else conn.Win32_Processor()[0].LoadPercentage
-            metrics['cpu_usage'] = 0 if metrics['cpu_usage'] is None else metrics['cpu_usage']
-            
-            # RAM Usage
-            total_ram = int(conn.Win32_ComputerSystem()[0].TotalPhysicalMemory)
-            free_ram = int(conn.Win32_OperatingSystem()[0].FreePhysicalMemory) * 1024
-            metrics['ram_usage'] = round(((total_ram - free_ram) / total_ram) * 100, 1)
-            metrics['ram_detailed'] = {
-                                        'total': round(total_ram / (1024 ** 3), 2),
-                                        'used': round((total_ram / (1024 ** 3)) - (free_ram / (1024 ** 3)), 2)
-                                        }
-            #Uptime
-            last_boot = datetime.strptime(conn.Win32_OperatingSystem()[0].LastBootUpTime.split('.')[0], '%Y%m%d%H%M%S')
-            uptime = datetime.now() - last_boot
-            metrics['uptime'] = uptime.days
-            # Drive Usage (C: and D:)
-            drives = conn.Win32_LogicalDisk(DriveType=3)
-            for drive in drives:
-                if drive.DeviceID == "C:":
-                    metrics['C_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
-                    metrics['C_detailed'] = {
-                                            'total' : round(int(drive.Size) / (1024 ** 3), 2),
-                                            'used' : round((int(drive.Size) - int(drive.FreeSpace)) / (1024 ** 3), 2)
-                                            }
-                elif drive.DeviceID == "D:":
-                    metrics['D_drive'] = round((int(drive.Size) - int(drive.FreeSpace)) / int(drive.Size) * 100, 1)
-                    metrics['D_detailed'] = {
-                                            'total' : round(int(drive.Size) / (1024 ** 3), 2),
-                                            'used' : round((int(drive.Size) - int(drive.FreeSpace)) / (1024 ** 3), 2)
-                                            }
-            metrics['status'] = 'Online'
-        except Exception as e:
-            print(f"Error getting metrics for {server}: {e}")
-        finally:
-            pythoncom.CoUninitialize()  # Clean up COM for this thread
-        
-        return {server: metrics}
-
-    def get_linux_metrics(self, server, credentials):
-        metrics = {
-            'ping': False,
-            'rdp/ssh': False,
-            'cpu_usage': 0,
-            'ram_usage': 0,
-            'ram_detailed': {'total': 0, 'used': 0},
-            'C_drive': 0,
-            'C_detailed': {'total': 0, 'used': 0},
-            'D_drive': 0,
-            'D_detailed': {'total': 0, 'used': 0},
-            'uptime' : 0,
-            'status': 'offline'
-        }
-        try:
-            ping_result = subprocess.run(['ping', '-n', '2', server], 
-                                       capture_output=True, 
-                                       text=True).returncode
-            metrics['ping'] = ping_result == 0
-            
-            if not metrics['ping']:
-                return {server: metrics}
-                
-            # Check SSH
-            metrics['rdp/ssh'] = self.check_rdp_connectivity(server, port=22)
-            
-            client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            
-            client.connect(hostname=server, username=credentials['user'], password=credentials['password'], timeout=5)
-            
-            stdin, stdout, stderr = client.exec_command("""
-                            cat /etc/os-release | grep ^NAME=;
-                            cat /etc/os-release | grep ^VERSION=;
-                            nproc;
-                            free -b | awk '/Mem:/{print $2}';
-                            uptime -s;
-                            top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}';
-                            free -b | awk '/Mem:/{print $2, $3}';
-                            df -B1 / | awk 'NR==2 {print $1,$2,$3,$6}'
-                            """)
-            output = stdout.read().decode().splitlines()
-            total_ram_bytes = int(output[3])
-            uptime_days = (datetime.now() - datetime.strptime(output[4], "%Y-%m-%d %H:%M:%S")).days
-            cpu_usage = float(output[5])
-            total_ram_gb = round(total_ram_bytes / (1024**3), 2)
-            used_ram_gb = round(int(output[6].split()[1]) / (1024**3), 2)
-            disks = []
-            for line in output[7:]:
-                if not line.strip() or 'Filesystem' in line:
-                    continue
-                parts = line.split()
-                try:
-                    disks.append({
-                        "disk": parts[0],
-                        "total_gb": round(int(parts[1]) / (1024**3), 2),
-                        "used_gb": round(int(parts[2]) / (1024**3), 2)
+                for server, metrics in self.server_details.items():
+                    writer.writerow({
+                        'Server': server,
+                        'Status': metrics['status'],
+                        'Type': self.server_credentials[server]['type'],
+                        'Ping': metrics['ping'],
+                        'RDP/SSH': metrics['rdp/ssh'],
+                        'CPU Usage (%)': metrics['cpu_usage'],
+                        'RAM Usage (%)': metrics['ram_usage'],
+                        'RAM Total (GB)': metrics['ram_detailed']['total'],
+                        'RAM Used (GB)': metrics['ram_detailed']['used'],
+                        'C Drive Usage (%)': metrics['C_drive'],
+                        'C Drive Total (GB)': metrics['C_detailed']['total'],
+                        'C Drive Used (GB)': metrics['C_detailed']['used'],
+                        'D Drive Usage (%)': metrics['D_drive'],
+                        'D Drive Total (GB)': metrics['D_detailed']['total'],
+                        'D Drive Used (GB)': metrics['D_detailed']['used'],
+                        'Uptime (days)': metrics['uptime']
                     })
-                except (ValueError, IndexError):
-                    continue
-            client.close()
-            metrics['cpu_usage'] = cpu_usage
-            metrics['ram_usage'] = round((used_ram_gb/total_ram_gb) * 100, 1)
-            metrics['ram_detailed'] = {
-                                        'total' : total_ram_gb,
-                                        'used' : used_ram_gb
-                                        }
-            metrics['uptime'] = uptime_days
-            metrics['C_drive'] = round((disks[0]['used_gb']/disks[0]['total_gb']) * 100, 1)
-            metrics['C_detailed'] = {
-                                        'total' : disks[0]['total_gb'],
-                                        'used' : disks[0]['used_gb']
-                                        }
-            metrics['status'] = 'Online'
-        except Exception as e:
-            print(f"Error getting metrics for {server}: {e}")
-        
-        return {server: metrics}
-
-    def get_metrics_worker(self, server, credentials):
-        if credentials["type"] == "Windows":
-            result = self.get_windows_metrics(server, credentials)
-        elif credentials["type"] == "Linux":
-            result = self.get_linux_metrics(server, credentials)
-        self.result_queue.put(result)
-        
-    def start_metrics_collection_thread(self):
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
-        loading_label = ttkb.Label(
-            self.content_frame,
-            text="Collecting metrics from servers...",
-            font=("Calibri", 14, "bold"),
-            bootstyle=INFO
-        )
-        loading_label.pack(expand=True)
-        self.content_frame.update()
-        """Start a thread to collect metrics."""
-        self.overview_btn.config(state="disabled")
-        threading.Thread(target=self.update_all_metrics).start()
-
-    def update_all_metrics(self):
-        # Clear previous metrics
-        self.server_details = {}
-        
-        # Use ThreadPoolExecutor to fetch metrics in parallel in a worker thread
-        self.result_queue = Queue()
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            for server, credentials in self.server_credentials.items():
-                executor.submit(self.get_metrics_worker, server, credentials)
-
-        # Schedule periodic checking of the queue to update the UI once metrics are collected
-        self.after(100, self.check_metrics_queue)
-
-    def check_metrics_queue(self):
-        try:
-            while not self.result_queue.empty():
-                result = self.result_queue.get_nowait()
-                self.server_details.update(result)
             
-            # If all metrics are collected, update the UI
-            if len(self.server_details) == len(self.server_credentials):
-                self.server_details = {key: self.server_details[key] for key in sorted(self.server_details)}
-                
-                self.update_gui_after_metrics()
-            else:
-                # If still waiting, check again after a small delay
-                self.after(100, self.check_metrics_queue)
+            # Show success message
+            ttkb.dialogs.Messagebox.show_info(
+                title="Export Successful",
+                message=f"Metrics exported successfully to:\n{file_path}",
+                parent=self
+            )
         except Exception as e:
-            print(f"Error while processing metrics: {e}")
-        finally:
-            self.overview_btn.config(state="normal")
+            ttkb.dialogs.Messagebox.show_error(
+                title="Export Failed",
+                message=f"Failed to export metrics:\n{str(e)}",
+                parent=self
+            )
+
+
+self.export_btn = ttkb.Button(
+            left_pane,
+            text="Export to CSV",
+            bootstyle="info",
+            style='Export.TButton',
+            command=self.export_to_csv,
+            state="disabled"  # Initially disabled
+        )
+        self.export_btn.pack(fill="x", pady=(0, 20))
 
     def update_gui_after_metrics(self):
         self.display_metrics()
-
-    def display_metrics(self):
-        # Clear previous content
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
-        
-        #Create Treeview
-        self.create_treeview_table()
-        # Create plots
-        self.create_plots()
-        # Update plots with actual data
-        self.update_plots_with_metrics()
-        
-        
-    def create_plots(self):
-        """Initialize the empty plots with vertical organization"""
-        self.canvases = []
-        self.figures = []
-        self.axes = []
-        
-        # Create main container frame
-        container_frame = ttkb.Frame(self.content_frame)
-        container_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Create CPU Usage frame
-        cpu_frame = ttkb.LabelFrame(container_frame, text="CPU Usage", bootstyle="cosmo")
-        cpu_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=10)
-        
-        # Create RAM Usage frame
-        ram_frame = ttkb.LabelFrame(container_frame, text="RAM Usage", bootstyle="cosmo")
-        ram_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=10)
-        
-        # Create Disk Usage frame
-        disk_frame = ttkb.LabelFrame(container_frame, text="Disk Usage", bootstyle="cosmo")
-        disk_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=10)
-        
-        # Create plots for CPU Usage (Windows above Linux)
-        self.create_metric_plots(cpu_frame, "CPU")
-        
-        # Create plots for RAM Usage (Windows above Linux)
-        self.create_metric_plots(ram_frame, "RAM")
-        
-        # Create plots for Disk Usage
-        self.create_disk_usage_plots(disk_frame)
-
-    def create_metric_plots(self, parent_frame, metric_type):
-        """Create Windows and Linux plots for a specific metric type"""
-        # Windows frame
-        windows_frame = ttkb.LabelFrame(parent_frame, text="Windows Servers", bootstyle="info")
-        windows_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 2))
-        
-        # Linux frame
-        linux_frame = ttkb.LabelFrame(parent_frame, text="Linux Servers", bootstyle="info")
-        linux_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(2, 5))
-        
-        
-        # Create plots for Windows
-        fig, ax = plt.subplots(figsize=(8, 3.5))
-        self.figures.append(fig)
-        self.axes.append(ax)
-        
-        canvas = FigureCanvasTkAgg(fig, master=windows_frame)
-        canvas.draw()
-        widget = canvas.get_tk_widget()
-        widget.pack(fill=tk.BOTH, expand=True, padx=5, pady=2)
-        self.canvases.append(canvas)
-        
-        # Create plots for Linux
-        fig, ax = plt.subplots(figsize=(8, 3.5))
-        self.figures.append(fig)
-        self.axes.append(ax)
-        
-        canvas = FigureCanvasTkAgg(fig, master=linux_frame)
-        canvas.draw()
-        widget = canvas.get_tk_widget()
-        widget.pack(fill=tk.BOTH, expand=True, padx=5, pady=2)
-        self.canvases.append(canvas)
-
-    def create_disk_usage_plots(self, parent_frame):
-        """Create meter plots for disk usage with proper organization"""
-        # Clear any existing frames first
-        for widget in parent_frame.winfo_children():
-            widget.destroy()
-        
-        # C: Drive frame - only create if we have Windows servers
-        if any(v["type"] == "Windows" for v in self.server_credentials.values()):
-            c_drive_frame = ttkb.LabelFrame(parent_frame, text="C: Drive (Windows) / Root Partition (Linux)", bootstyle="info")
-            c_drive_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 2))
-            self.create_meter_rows(c_drive_frame, "C")
-        
-        # D: Drive frame - only create if we have Windows servers
-        if any(v["type"] == "Windows" for v in self.server_credentials.values()):
-            d_drive_frame = ttkb.LabelFrame(parent_frame, text="D: Drive (Windows)", bootstyle="info")
-            d_drive_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(2, 5))
-            self.create_meter_rows(d_drive_frame, "D")
-
-    def create_meter_rows(self, parent_frame, drive_type):
-        """Create rows of meters with 5 meters per row and increased size"""
-        # Get the appropriate servers and usage data
-        servers = []
-        usages = []
-        
-        for server, metrics in self.server_details.items():
-            if drive_type == "C":
-                if self.server_credentials[server]["type"] == "Windows":
-                    servers.append(f"{server} (C:)")
-                    usages.append(metrics['C_drive'])
-                else:  # Linux
-                    servers.append(f"{server} (/root)")
-                    usages.append(metrics['C_drive'])
-            elif drive_type == "D" and self.server_credentials[server]["type"] == "Windows":
-                servers.append(f"{server} (D:)")
-                usages.append(metrics['D_drive'])
-        
-        # Calculate number of rows needed (5 meters per row)
-        num_servers = len(servers)
-        if num_servers == 0:
-            return
-            
-        num_rows = (num_servers + 4) // 5  # Round up
-        
-        for row in range(num_rows):
-            row_frame = ttkb.Frame(parent_frame)
-            row_frame.pack(fill=tk.X, expand=True)
-            
-            # Get servers and usages for this row
-            start_idx = row * 5
-            end_idx = min((row + 1) * 5, num_servers)
-            row_servers = servers[start_idx:end_idx]
-            row_usages = usages[start_idx:end_idx]
-            
-            # Create meters for this row with increased size
-            for server, usage in zip(row_servers, row_usages):
-                meter_style = self.get_meter_style(usage)
-                meter = ttkb.Meter(
-                    row_frame,
-                    amountused=usage,
-                    meterthickness=13,  # Increased thickness
-                    metersize=150,       # Increased size (default is 75)
-                    bootstyle=meter_style,
-                    interactive=True,
-                    textfont=['Times', 14, 'bold'],  # Larger font
-                    textright='%',
-                    subtext=server,
-                    subtextfont=['Times', 10, 'bold'],  # Larger font
-                    subtextstyle="secondary"
-                )
-                meter.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5, pady=5)
-                
-                # Store meter widgets for later updates if needed
-                if drive_type == "C":
-                    self.c_drive_meters.append(meter)
-                else:
-                    self.d_drive_meters.append(meter)
-
-    def get_meter_style(self, value):
-        """Determine meter style based on threshold"""
-        if value >= 95:
-            return "danger"
-        elif value >= 85:
-            return "warning"
-        else:
-            return "success"
-    
-    def create_treeview_table(self):
-        
-        container_frame = ttkb.Frame(self.content_frame, height=300)
-        container_frame.pack(fill="both", expand=True, padx=10)
-        
-        def get_color(value, threshold1=95, threshold2=85):
-            """Returns a color based on value."""
-            if value >= threshold1:
-                return "#ff0000"  # Red (danger)
-            elif value >= threshold2:
-                return "#ffff00"  # Yellow (warning)
-            else:
-                return "#00ff00"  # Green (success)
-
-        # Create Treeview widget using ttkbootstrap's tb.Treeview
-        tree = ttkb.Treeview(container_frame, bootstyle="primary", columns=("Status", "Type", "Ping", "RDP/SSH", "CPU Usage", "RAM Usage", "C Drive", "D Drive", "Uptime"))
-        server_data = self.server_details.copy()
-        # Define columns
-        tree.column("#0", width=110, anchor="w")  # Tree column (for devices)
-        tree.column("Status", width=110, anchor="center")
-        tree.column("Type", width=100, anchor="center")
-        tree.column("Ping", width=100, anchor="center")
-        tree.column("RDP/SSH", width=100, anchor="center")
-        tree.column("CPU Usage", width=110, anchor="center")
-        tree.column("RAM Usage", width=110, anchor="center")
-        tree.column("C Drive", width=110, anchor="center")
-        tree.column("D Drive", width=110, anchor="center")
-        tree.column("Uptime", width=110, anchor="center")
-
-        # Define headings
-        tree.heading("#0", text="Device", anchor="w")
-        tree.heading("Status", text="Status", anchor="center")
-        tree.heading("Type", text="Type", anchor="center")
-        tree.heading("Ping", text="Ping", anchor="center")
-        tree.heading("RDP/SSH", text="RDP/SSH", anchor="center")
-        tree.heading("CPU Usage", text="CPU Usage (%)", anchor="center")
-        tree.heading("RAM Usage", text="RAM Usage (%)", anchor="center")
-        tree.heading("C Drive", text="C Drive (%)", anchor="center")
-        tree.heading("D Drive", text="D Drive (%)", anchor="center")
-        tree.heading("Uptime", text="Uptime (days)", anchor="center")
-
-        # Insert data
-        for device, stats in server_data.items():
-            ram_color = get_color(stats['ram_usage'])
-            c_drive_color = get_color(stats['C_drive'])
-            d_drive_color = get_color(stats['D_drive'])
-            
-            style = ttk.Style()
-            style.configure("Treeview.Heading", font=('Calibri', 11, "bold"))
-            style.configure("Treeview", font=('Microsoft Sans Serif', 10))
-            style.configure("Treeview", rowheight=40)
-            
-            cpu_usage = "N/A" if stats['status'] == 'Offline' else f"{stats['cpu_usage']} %"
-            ram_usage = "N/A" if stats['status'] == 'Offline' else f"{stats['ram_usage']} %"
-            ram_detailed = {'total':"N/A", 'used':"N/A"} if stats['status'] == 'Offline' else {'total':f"{stats['ram_detailed']['total']} GB", 'used': f"{stats['ram_detailed']['used']} GB"}
-            C_drive = "N/A" if stats['status'] == 'Offline' else f"{stats['C_drive']} %"
-            D_drive = "N/A" if stats['status'] == 'Offline' else f"{stats['D_drive']} %"
-            C_detailed = {'total':"N/A", 'used':"N/A"} if stats['status'] == 'Offline' else {'total':f"{stats['C_detailed']['total']} GB", 'used': f"{stats['C_detailed']['used']} GB"}
-            D_detailed = {'total':"N/A", 'used':"N/A"} if stats['status'] == 'Offline' else {'total':f"{stats['D_detailed']['total']} GB", 'used': f"{stats['D_detailed']['used']} GB"}
-            uptime = "N/A" if stats['status'] == 'Offline' else f"{stats['uptime']} Days"
-            
-            # Main device node
-            parent = tree.insert("", "end", text=device, values=(stats['status'], self.server_credentials[device]['type'], stats['ping'], stats['rdp/ssh'], cpu_usage, ram_usage, C_drive, D_drive, uptime))
-
-            # Insert RAM detailed info under each device
-            ram_item = tree.insert(parent, "end", text="RAM", values=(f"Total: {ram_detailed['total']}", f"Used: {ram_detailed['used']}", "", "", ""))
-            
-            # Apply color tag to specific columns (e.g., RAM Usage)
-            tree.tag_configure(f"ram_{device}", background=ram_color)
-            tree.item(ram_item, tags=(f"ram_{device}",))
-
-            # Insert C drive detailed info under each device
-            c_item = tree.insert(parent, "end", text="C Drive", values=(f"Total: {C_detailed['total']}", f"Used: {C_detailed['used']}", "", "", ""))
-            
-            # Apply color tag to specific columns (e.g., C Drive Usage)
-            tree.tag_configure(f"c_drive_{device}", background=c_drive_color)
-            tree.item(c_item, tags=(f"c_drive_{device}",))
-
-            # Insert D drive detailed info under each device
-            d_item = tree.insert(parent, "end", text="D Drive", values=(f"Total: {D_detailed['total']}", f"Used: {D_detailed['used']}", "", "", ""))
-            
-            # Apply color tag to specific columns (e.g., D Drive Usage)
-            tree.tag_configure(f"d_drive_{device}", background=d_drive_color)
-            tree.item(d_item, tags=(f"d_drive_{device}",))
-
-        # Pack the treeview widget into the window
-        tree.pack(fill="both", expand=True)
-
-    def update_plots_with_metrics(self):
-        """Update all plots with actual metrics data"""
-        # Separate Windows and Linux servers
-        windows_servers = []
-        windows_cpu = []
-        windows_ram = []
-        windows_c_drive = []
-        windows_d_drive = []
-        
-        linux_servers = []
-        linux_cpu = []
-        linux_ram = []
-        linux_c_drive = []
-        
-        for server, metrics in self.server_details.items():
-            if self.server_credentials[server]["type"] == "Windows":
-                windows_servers.append(server)
-                windows_cpu.append(metrics['cpu_usage'])
-                windows_ram.append(metrics['ram_usage'])
-                windows_c_drive.append(metrics['C_drive'])
-                windows_d_drive.append(metrics['D_drive'])
-            else:
-                linux_servers.append(server)
-                linux_cpu.append(metrics['cpu_usage'])
-                linux_ram.append(metrics['ram_usage'])
-                linux_c_drive.append(metrics['C_drive'])
-        
-        # Clear previous plots
-        for ax in self.axes:
-            ax.clear()
-        norm = plt.Normalize(0, 100)
-        
-        # Update CPU Usage plots
-        if windows_servers:
-            # Windows CPU Usage
-            cpu_colors = self.get_colors(windows_cpu)
-            self.axes[0].bar(windows_servers, windows_cpu, color=cpu_colors, edgecolor='white', linewidth=1)
-            self.axes[0].set_title("Windows CPU Usage (%)", fontweight="bold")
-            self.axes[0].set_ylim(0, max(windows_cpu) + 10)
-            self.axes[0].grid(axis='y', linestyle=':', alpha=0.7)
-            for i, val in enumerate(windows_cpu):
-                self.axes[0].text(i, val + 2, f"{val}%", ha='center', va="bottom")
-        
-        if linux_servers:
-            # Linux CPU Usage
-            cpu_colors = self.get_colors(linux_cpu)
-            self.axes[1].bar(linux_servers, linux_cpu, color=cpu_colors, edgecolor='white', linewidth=1)
-            self.axes[1].set_title("Linux CPU Usage (%)", fontweight="bold")
-            self.axes[1].set_ylim(0, max(linux_cpu) + 10)
-            self.axes[1].grid(axis='y', linestyle=':', alpha=0.7)
-            for i, val in enumerate(linux_cpu):
-                self.axes[1].text(i, val + 2, f"{val}%", ha='center')
-        
-        # Update RAM Usage plots
-        if windows_servers:
-            # Windows RAM Usage
-            ram_colors = self.get_colors(windows_ram)
-            self.axes[2].barh(windows_servers, windows_ram, color=ram_colors, edgecolor='white', linewidth=1)
-            self.axes[2].set_title("Windows RAM Usage (%)", fontweight="bold")
-            self.axes[2].set_xlim(0, 100)
-            self.axes[2].grid(axis='x', linestyle='--', alpha=0.7)
-            for i, val in enumerate(windows_ram):
-                self.axes[2].text(val + 1, i, f"{val}%", va='center')
-        
-        if linux_servers:
-            # Linux RAM Usage
-            ram_colors = self.get_colors(linux_ram)
-            self.axes[3].barh(linux_servers, linux_ram, color=ram_colors, edgecolor='white', linewidth=1)
-            self.axes[3].set_title("Linux RAM Usage (%)", fontweight="bold")
-            self.axes[3].set_xlim(0, 100)
-            self.axes[3].grid(axis='x', linestyle='--', alpha=0.7)
-            for i, val in enumerate(linux_ram):
-                self.axes[3].text(val + 1, i, f"{val}%", va='center')
-
-        # Update Disk Usage meters
-        self.update_disk_meters(windows_servers, windows_c_drive, windows_d_drive, linux_servers, linux_c_drive)
-
-        # Redraw all canvases
-        for canvas in self.canvases:
-            canvas.draw()
-
-    def update_disk_meters(self, windows_servers, windows_c_drive, windows_d_drive, linux_servers, linux_c_drive):
-        """Update the disk usage meter widgets with actual data"""
-        # Clear existing meters
-        for meter in self.c_drive_meters:
-            meter.destroy()
-        for meter in self.d_drive_meters:
-            meter.destroy()
-        self.c_drive_meters = []
-        self.d_drive_meters = []
-        
-        # Recreate the disk usage plots with updated data
-        disk_frame = self.content_frame.winfo_children()[1].winfo_children()[2]
-        
-        self.create_disk_usage_plots(disk_frame)
-
-    def get_colors(self, values):
-        """Determine bar colors based on percentage"""
-        colors = []
-        for val in values:
-            if val >= 95:
-                colors.append('#f04124')
-            elif val >= 85:
-                colors.append('#e99002')
-            else:
-                colors.append('#43ac6a')
-        return colors
-
-
-if __name__ == '__main__':
-    app = ttkb.Window("Health Check Dashboard", "flatly")
-    app.state('zoomed')
-    dashboard = SystemHealthCheckDashboard(app)
-    app.mainloop()
+        self.export_btn.config(state="normal")  # Enable export button now that we have data
