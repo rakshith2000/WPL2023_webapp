@@ -1,80 +1,96 @@
-    def export_to_csv(self):
-        """Export the collected metrics to a CSV file with file dialog for path selection"""
-        if not self.server_details:
-            return
-            
-        # Create a file dialog to get the save path
-        file_path = ttkb.dialogs.dialogs.SaveFileDialog(
-            title="Save Metrics as CSV",
-            initialfile=f"server_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            filetypes=[('CSV Files', '*.csv')],
-            parent=self
-        ).show()
-        
-        # If user canceled the dialog
-        if not file_path:
-            return
-            
-        # Ensure the file has .csv extension
-        if not file_path.lower().endswith('.csv'):
-            file_path += '.csv'
-        
+import ttkbootstrap as tb
+from tkinter import Canvas, font
+
+# Sample data and headers
+headers = ["Placement type", "Spend TY", "Spend PoP (%)", "Spend YoY (%)",
+           "Sessions - TY", "Sessions PoP (%)", "Sessions YoY (%)",
+           "Bookings - TY", "Bookings PoP (%)", "Bookings YoY (%)"]
+
+data = [
+    ["Paid Search Brand", "$61,882", "-2.0%", "-13.3%", "192,118", "7.4%", "18.3%", "1,828", "5.0%", "-2.0%"],
+    ["Paid Search Non-Brand Prospecting DSA", "$89,166", "-16.6%", "35.6%", "66,401", "4.9%", "28.8%", "612", "-7.6%", "-2.9%"],
+    ["Paid Search Non-Brand Prospecting Destination", "$187,833", "4.2%", "26.9%", "137,642", "10.5%", "51.5%", "625", "-6.4%", "-18.0%"],
+    ["Paid Search Non-Brand Prospecting Generics", "$71,578", "-12.6%", "8.7%", "68,308", "4.1%", "11.2%", "651", "13.8%", "-10.7%"],
+    ["Paid Search Non-Brand Prospecting Property", "$44,909", "-0.4%", "-38.7%", "42,944", "15.5%", "-23.7%", "605", "-4.0%", "-11.7%"],
+    ["Paid Search Non-Brand Retargeting DSA", "$62,141", "46.6%", "-33.6%", "33,578", "2.9%", "-26.0%", "621", "2.0%", "-19.6%"],
+    ["Paid Search Non-Brand Retargeting Destination", "$165,738", "-1.4%", "452.0%", "87,549", "11.1%", "21.2%", "838", "3.8%", "0.0%"],
+    ["Paid Search Non-Brand Retargeting Generics", "$92,577", "-6.8%", "-59.7%", "53,169", "4.0%", "-1.1%", "598", "-9.9%", "-21.8%"],
+    ["Paid Search Non-Brand Retargeting Property", "$69,056", "2.7%", "195.3%", "47,853", "15.5%", "3.0%", "633", "0.6%", "-3.8%"]
+]
+
+header_bg = "#000000"
+header_fg = "#ffffff"
+alt_bg = "#f8f9fa"
+cell_height = 30
+padding = 10  # padding per column for nicer spacing
+
+# App setup
+app = tb.Window(themename="flatly")
+app.title("Auto-Fit Responsive Table")
+canvas = Canvas(app, bg="white")
+canvas.pack(fill="both", expand=True)
+
+# Tkinter font for measuring text
+tk_font = font.Font(family="Helvetica", size=10)
+
+def get_color(val):
+    if "%" in val:
         try:
-            with open(file_path, 'w', newline='') as csvfile:
-                fieldnames = [
-                    'Server', 'Status', 'Type', 'Ping', 'RDP/SSH', 
-                    'CPU Usage (%)', 'RAM Usage (%)', 'RAM Total (GB)', 'RAM Used (GB)',
-                    'C Drive Usage (%)', 'C Drive Total (GB)', 'C Drive Used (GB)',
-                    'D Drive Usage (%)', 'D Drive Total (GB)', 'D Drive Used (GB)',
-                    'Uptime (days)'
-                ]
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-                
-                for server, metrics in self.server_details.items():
-                    writer.writerow({
-                        'Server': server,
-                        'Status': metrics['status'],
-                        'Type': self.server_credentials[server]['type'],
-                        'Ping': metrics['ping'],
-                        'RDP/SSH': metrics['rdp/ssh'],
-                        'CPU Usage (%)': metrics['cpu_usage'],
-                        'RAM Usage (%)': metrics['ram_usage'],
-                        'RAM Total (GB)': metrics['ram_detailed']['total'],
-                        'RAM Used (GB)': metrics['ram_detailed']['used'],
-                        'C Drive Usage (%)': metrics['C_drive'],
-                        'C Drive Total (GB)': metrics['C_detailed']['total'],
-                        'C Drive Used (GB)': metrics['C_detailed']['used'],
-                        'D Drive Usage (%)': metrics['D_drive'],
-                        'D Drive Total (GB)': metrics['D_detailed']['total'],
-                        'D Drive Used (GB)': metrics['D_detailed']['used'],
-                        'Uptime (days)': metrics['uptime']
-                    })
-            
-            # Show success message
-            ttkb.dialogs.Messagebox.show_info(
-                title="Export Successful",
-                message=f"Metrics exported successfully to:\n{file_path}",
-                parent=self
-            )
-        except Exception as e:
-            ttkb.dialogs.Messagebox.show_error(
-                title="Export Failed",
-                message=f"Failed to export metrics:\n{str(e)}",
-                parent=self
-            )
+            num = float(val.replace("%", "").replace("(", "-").replace(")", ""))
+            if num < 0:
+                return "red"
+            elif num > 0:
+                return "green"
+        except:
+            pass
+    return "black"
 
+def calculate_column_widths(window_width):
+    max_text_widths = []
+    for col_index in range(len(headers)):
+        column_texts = [headers[col_index]] + [row[col_index] for row in data]
+        max_width = max(tk_font.measure(text) for text in column_texts) + padding
+        max_text_widths.append(max_width)
 
-self.export_btn = ttkb.Button(
-            left_pane,
-            text="Export to CSV",
-            bootstyle="info",
-            style='Export.TButton',
-            command=self.export_to_csv,
-            state="disabled"  # Initially disabled
-        )
-        self.export_btn.pack(fill="x", pady=(0, 20))
+    total_content_width = sum(max_text_widths)
+    available_width = window_width
 
-    def update_gui_after_metrics(self):
-        self.display_metrics()
-        self.export_btn.config(state="normal")  # Enable export button now that we have data
+    if total_content_width < available_width:
+        # Distribute extra width proportionally
+        extra = available_width - total_content_width
+        max_text_widths = [w + (extra * w / total_content_width) for w in max_text_widths]
+
+    return max_text_widths
+
+def draw_table(width):
+    canvas.delete("all")
+    col_widths = calculate_column_widths(width)
+
+    # Draw headers
+    x = 0
+    for i, header in enumerate(headers):
+        w = col_widths[i]
+        canvas.create_rectangle(x, 0, x + w, cell_height, fill=header_bg, outline="gray")
+        canvas.create_text(x + w // 2, cell_height // 2, text=header, fill=header_fg, font=("Helvetica", 10, "bold"))
+        x += w
+
+    # Draw rows
+    for r, row in enumerate(data):
+        y0 = (r + 1) * cell_height
+        y1 = y0 + cell_height
+        bg_color = alt_bg if r % 2 == 0 else "white"
+        x = 0
+        for c, cell in enumerate(row):
+            w = col_widths[c]
+            canvas.create_rectangle(x, y0, x + w, y1, fill=bg_color, outline="gray")
+            color = get_color(cell)
+            canvas.create_text(x + w // 2, (y0 + y1) // 2, text=cell, fill=color, font=("Helvetica", 10))
+            x += w
+
+# On resize, redraw with updated width
+def on_resize(event):
+    draw_table(event.width)
+
+canvas.bind("<Configure>", on_resize)
+
+app.mainloop()
