@@ -61,15 +61,15 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         self.create_left_pane()
         self.create_main_area()
         
-        self.server_details = {}  # To store collected metrics
-        self.canvases = []       # For matplotlib canvases
-        self.figures = []        # For matplotlib figures
-        self.axes = []           # For matplotlib axes
-        self.c_drive_meters = []  # To store C drive meter widgets
-        self.d_drive_meters = []  # To store D drive meter widgets
+        self.windows_details = {}  # To store Windows server metrics
+        self.linux_details = {}    # To store Linux server metrics
+        self.canvases = []         # For matplotlib canvases
+        self.figures = []          # For matplotlib figures
+        self.axes = []             # For matplotlib axes
+        self.c_drive_meters = []   # To store C drive meter widgets
+        self.d_drive_meters = []   # To store D drive meter widgets
         
         plt.style.use('seaborn')
-        #plt.rcParams['axes.facecolor'] = '#f5f5f5'
 
     def create_header(self):
         header_frame = ttkb.Frame(self, padding=10, bootstyle=PRIMARY)
@@ -312,7 +312,8 @@ class SystemHealthCheckDashboard(ttkb.Frame):
 
     def update_all_metrics(self):
         # Clear previous metrics
-        self.server_details = {}
+        self.windows_details = {}
+        self.linux_details = {}
         
         # Use ThreadPoolExecutor to fetch metrics in parallel in a worker thread
         self.result_queue = Queue()
@@ -327,11 +328,17 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         try:
             while not self.result_queue.empty():
                 result = self.result_queue.get_nowait()
-                self.server_details.update(result)
+                server = list(result.keys())[0]
+                if self.server_credentials[server]["type"] == "Windows":
+                    self.windows_details.update(result)
+                else:
+                    self.linux_details.update(result)
             
             # If all metrics are collected, update the UI
-            if len(self.server_details) == len(self.server_credentials):
-                self.server_details = {key: self.server_details[key] for key in sorted(self.server_details)}
+            if (len(self.windows_details) + len(self.linux_details)) == len(self.server_credentials):
+                # Sort the dictionaries by server name
+                self.windows_details = {key: self.windows_details[key] for key in sorted(self.windows_details)}
+                self.linux_details = {key: self.linux_details[key] for key in sorted(self.linux_details)}
                 
                 self.update_gui_after_metrics()
             else:
@@ -344,7 +351,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             
     def export_to_csv(self):
         """Export the collected metrics to a CSV file with file dialog for path selection"""
-        if not self.server_details:
+        if not self.windows_details and not self.linux_details:
             return
             
         # Create a file dialog to get the save path
@@ -375,11 +382,12 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
                 
-                for server, metrics in self.server_details.items():
+                # Write Windows server data
+                for server, metrics in self.windows_details.items():
                     writer.writerow({
                         'Server': server,
                         'Status': metrics['status'],
-                        'Type': self.server_credentials[server]['type'],
+                        'Type': 'Windows',
                         'Ping': metrics['ping'],
                         'RDP/SSH': metrics['rdp/ssh'],
                         'CPU Usage (%)': metrics['cpu_usage'],
@@ -392,6 +400,27 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                         'D Drive Usage (%)': metrics['D_drive'],
                         'D Drive Total (GB)': metrics['D_detailed']['total'],
                         'D Drive Used (GB)': metrics['D_detailed']['used'],
+                        'Uptime (days)': metrics['uptime']
+                    })
+                
+                # Write Linux server data
+                for server, metrics in self.linux_details.items():
+                    writer.writerow({
+                        'Server': server,
+                        'Status': metrics['status'],
+                        'Type': 'Linux',
+                        'Ping': metrics['ping'],
+                        'RDP/SSH': metrics['rdp/ssh'],
+                        'CPU Usage (%)': metrics['cpu_usage'],
+                        'RAM Usage (%)': metrics['ram_usage'],
+                        'RAM Total (GB)': metrics['ram_detailed']['total'],
+                        'RAM Used (GB)': metrics['ram_detailed']['used'],
+                        'C Drive Usage (%)': metrics['C_drive'],
+                        'C Drive Total (GB)': metrics['C_detailed']['total'],
+                        'C Drive Used (GB)': metrics['C_detailed']['used'],
+                        'D Drive Usage (%)': 'N/A',
+                        'D Drive Total (GB)': 'N/A',
+                        'D Drive Used (GB)': 'N/A',
                         'Uptime (days)': metrics['uptime']
                     })
             
@@ -417,13 +446,12 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         for widget in self.content_frame.winfo_children():
             widget.destroy()
         
-        #Create Treeview
+        # Create Treeview
         self.create_canvas_table()
         # Create plots
         self.create_plots()
         # Update plots with actual data
         self.update_plots_with_metrics()
-        
         
     def create_plots(self):
         """Initialize the empty plots with vertical organization"""
@@ -466,7 +494,6 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         linux_frame = ttkb.LabelFrame(parent_frame, text="Linux Servers", bootstyle="info")
         linux_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(2, 5))
         
-        
         # Create plots for Windows
         fig, ax = plt.subplots(figsize=(8, 3.5))
         self.figures.append(fig)
@@ -496,13 +523,13 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             widget.destroy()
         
         # C: Drive frame - only create if we have Windows servers
-        if any(v["type"] == "Windows" for v in self.server_credentials.values()):
+        if self.windows_details:
             c_drive_frame = ttkb.LabelFrame(parent_frame, text="C: Drive (Windows) / Root Partition (Linux)", bootstyle="info")
             c_drive_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 2))
             self.create_meter_rows(c_drive_frame, "C")
         
         # D: Drive frame - only create if we have Windows servers
-        if any(v["type"] == "Windows" for v in self.server_credentials.values()):
+        if self.windows_details:
             d_drive_frame = ttkb.LabelFrame(parent_frame, text="D: Drive (Windows)", bootstyle="info")
             d_drive_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(2, 5))
             self.create_meter_rows(d_drive_frame, "D")
@@ -513,15 +540,19 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         servers = []
         usages = []
         
-        for server, metrics in self.server_details.items():
-            if drive_type == "C":
-                if self.server_credentials[server]["type"] == "Windows":
-                    servers.append(f"{server} (C:)")
-                    usages.append(metrics['C_drive'])
-                else:  # Linux
-                    servers.append(f"{server} (/root)")
-                    usages.append(metrics['C_drive'])
-            elif drive_type == "D" and self.server_credentials[server]["type"] == "Windows":
+        if drive_type == "C":
+            # Add Windows servers first
+            for server, metrics in self.windows_details.items():
+                servers.append(f"{server} (C:)")
+                usages.append(metrics['C_drive'])
+            
+            # Add Linux servers
+            for server, metrics in self.linux_details.items():
+                servers.append(f"{server} (/root)")
+                usages.append(metrics['C_drive'])
+        elif drive_type == "D":
+            # Only Windows servers have D drive
+            for server, metrics in self.windows_details.items():
                 servers.append(f"{server} (D:)")
                 usages.append(metrics['D_drive'])
         
@@ -632,7 +663,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
     
     def draw_table(self):
         """Draw the table with server metrics"""
-        if not self.server_details:
+        if not self.windows_details and not self.linux_details:
             return
             
         # Prepare headers and data
@@ -641,8 +672,9 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             "CPU Usage", "RAM Usage", "C Drive", "D Drive", "Uptime"
         ]
         
+        # Combine Windows and Linux data
         data = []
-        for server, metrics in self.server_details.items():
+        for server, metrics in {**self.windows_details, **self.linux_details}.items():
             row = [
                 server,
                 metrics['status'],
@@ -724,39 +756,15 @@ class SystemHealthCheckDashboard(ttkb.Frame):
 
     def update_plots_with_metrics(self):
         """Update all plots with actual metrics data"""
-        # Separate Windows and Linux servers
-        windows_servers = []
-        windows_cpu = []
-        windows_ram = []
-        windows_c_drive = []
-        windows_d_drive = []
-        
-        linux_servers = []
-        linux_cpu = []
-        linux_ram = []
-        linux_c_drive = []
-        
-        for server, metrics in self.server_details.items():
-            if self.server_credentials[server]["type"] == "Windows":
-                windows_servers.append(server)
-                windows_cpu.append(metrics['cpu_usage'])
-                windows_ram.append(metrics['ram_usage'])
-                windows_c_drive.append(metrics['C_drive'])
-                windows_d_drive.append(metrics['D_drive'])
-            else:
-                linux_servers.append(server)
-                linux_cpu.append(metrics['cpu_usage'])
-                linux_ram.append(metrics['ram_usage'])
-                linux_c_drive.append(metrics['C_drive'])
-        
         # Clear previous plots
         for ax in self.axes:
             ax.clear()
-        norm = plt.Normalize(0, 100)
         
         # Update CPU Usage plots
-        if windows_servers:
+        if self.windows_details:
             # Windows CPU Usage
+            windows_servers = list(self.windows_details.keys())
+            windows_cpu = [metrics['cpu_usage'] for metrics in self.windows_details.values()]
             cpu_colors = self.get_colors(windows_cpu)
             self.axes[0].bar(windows_servers, windows_cpu, color=cpu_colors, edgecolor='white', linewidth=1)
             self.axes[0].set_title("Windows CPU Usage (%)", fontweight="bold")
@@ -765,74 +773,14 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             for i, val in enumerate(windows_cpu):
                 self.axes[0].text(i, val + 2, f"{val}%", ha='center', va="bottom")
         
-        if linux_servers:
+        if self.linux_details:
             # Linux CPU Usage
+            linux_servers = list(self.linux_details.keys())
+            linux_cpu = [metrics['cpu_usage'] for metrics in self.linux_details.values()]
             cpu_colors = self.get_colors(linux_cpu)
             self.axes[1].bar(linux_servers, linux_cpu, color=cpu_colors, edgecolor='white', linewidth=1)
             self.axes[1].set_title("Linux CPU Usage (%)", fontweight="bold")
             self.axes[1].set_ylim(0, max(linux_cpu) + 10)
             self.axes[1].grid(axis='y', linestyle=':', alpha=0.7)
             for i, val in enumerate(linux_cpu):
-                self.axes[1].text(i, val + 2, f"{val}%", ha='center')
-        
-        # Update RAM Usage plots
-        if windows_servers:
-            # Windows RAM Usage
-            ram_colors = self.get_colors(windows_ram)
-            self.axes[2].barh(windows_servers, windows_ram, color=ram_colors, edgecolor='white', linewidth=1)
-            self.axes[2].set_title("Windows RAM Usage (%)", fontweight="bold")
-            self.axes[2].set_xlim(0, 100)
-            self.axes[2].grid(axis='x', linestyle='--', alpha=0.7)
-            for i, val in enumerate(windows_ram):
-                self.axes[2].text(val + 1, i, f"{val}%", va='center')
-        
-        if linux_servers:
-            # Linux RAM Usage
-            ram_colors = self.get_colors(linux_ram)
-            self.axes[3].barh(linux_servers, linux_ram, color=ram_colors, edgecolor='white', linewidth=1)
-            self.axes[3].set_title("Linux RAM Usage (%)", fontweight="bold")
-            self.axes[3].set_xlim(0, 100)
-            self.axes[3].grid(axis='x', linestyle='--', alpha=0.7)
-            for i, val in enumerate(linux_ram):
-                self.axes[3].text(val + 1, i, f"{val}%", va='center')
-
-        # Update Disk Usage meters
-        self.update_disk_meters(windows_servers, windows_c_drive, windows_d_drive, linux_servers, linux_c_drive)
-
-        # Redraw all canvases
-        for canvas in self.canvases:
-            canvas.draw()
-
-    def update_disk_meters(self, windows_servers, windows_c_drive, windows_d_drive, linux_servers, linux_c_drive):
-        """Update the disk usage meter widgets with actual data"""
-        # Clear existing meters
-        for meter in self.c_drive_meters:
-            meter.destroy()
-        for meter in self.d_drive_meters:
-            meter.destroy()
-        self.c_drive_meters = []
-        self.d_drive_meters = []
-        
-        # Recreate the disk usage plots with updated data
-        disk_frame = self.content_frame.winfo_children()[1].winfo_children()[2]
-        
-        self.create_disk_usage_plots(disk_frame)
-
-    def get_colors(self, values):
-        """Determine bar colors based on percentage"""
-        colors = []
-        for val in values:
-            if val >= 95:
-                colors.append('#f04124')
-            elif val >= 85:
-                colors.append('#e99002')
-            else:
-                colors.append('#43ac6a')
-        return colors
-
-
-if __name__ == '__main__':
-    app = ttkb.Window("Health Check Dashboard", "flatly")
-    app.state('zoomed')
-    dashboard = SystemHealthCheckDashboard(app)
-    app.mainloop()
+                self.axes[1].text(i, val + 2, f"{val}%", ha='
