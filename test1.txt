@@ -1,55 +1,91 @@
-import wmi
+import paramiko
 import re
 
-def get_remote_service_status(remote_host, username, password, service_name_pattern):
+# Function to execute SSH command and return output
+def execute_command(ssh_client, command):
+    stdin, stdout, stderr = ssh_client.exec_command(command)
+    return stdout.read().decode('utf-8')
+
+# SSH connection setup
+def ssh_connect(host, port, username, password):
+    ssh_client = paramiko.SSHClient()
+    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh_client.connect(host, port=port, username=username, password=password)
+    return ssh_client
+
+# Function to get filesystem utilization
+def get_fs_utilization(ssh_client):
+    fs_utilization = {}
+    command = "df -hlPT | egrep -v 'tmpfs|Type'"
+    output = execute_command(ssh_client, command)
+    
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) > 6:
+            utilization = int(re.search(r'(\d+)%', parts[5]).group(1))
+            if utilization > 90:
+                fs_utilization[parts[6]] = f"Filesystem {parts[6]} is utilized at {parts[5]}"
+    return fs_utilization
+
+# Function to get CPU utilization
+def get_cpu_utilization(ssh_client):
+    command = "sar -u 1 5 | awk '/Average:/ {print 100 - $NF}'"
+    output = execute_command(ssh_client, command)
+    return {"cpu_utilization": output.strip()}
+
+# Function to get Swap utilization
+def get_swap_utilization(ssh_client):
+    swap_utilization = {}
+    command = "free -m | awk '/Swap:/ {print $3,$2}'"
+    output = execute_command(ssh_client, command)
+    
+    for line in output.splitlines():
+        used, total = line.split()
+        swap_percentage = (int(used) / int(total)) * 100
+        swap_utilization['swap_utilization'] = f"{swap_percentage:.2f}%"
+    return swap_utilization
+
+# Function to check for faulted resources
+def get_faulted_resources(ssh_client):
+    command = "sudo /opt/VRTS/bin/hastatus -sum"
+    output = execute_command(ssh_client, command)
+    return {"faulted_resources": output.strip()}
+
+# Function to check server uptime and last reboot
+def get_server_status(ssh_client):
+    command = "uptime"
+    output = execute_command(ssh_client, command)
+    return {"server_status": output.strip()}
+
+# Main function to gather all information
+def gather_server_info(host, port, username, password):
     try:
-        # Connect to the remote computer using WMI with provided credentials
-        connection = wmi.WMI(computer=remote_host, user=username, password=password)
-
-        # Prepare a regular expression pattern for case-insensitive search and wildcard support
-        # Replace '*' with '.*' and '?' with '.' for regex compatibility
-        regex_pattern = service_name_pattern.replace('*', '.*').replace('?', '.')
-        regex_pattern = f"^{regex_pattern}$"  # Anchors the pattern to match the full service name
-
-        # Query for all services
-        matched_services = []
-        for service in connection.Win32_Service():
-            # Match service name using the regex pattern (case-insensitive)
-            if re.match(regex_pattern, service.Name, re.IGNORECASE):
-                service_status = {
-                    'Service Name': service.Name,
-                    'Display Name': service.DisplayName,
-                    'State': service.State,           # Running, Stopped, etc.
-                    'Status': service.Status,         # Started, Stopped, etc.
-                    'Start Mode': service.StartMode,  # Manual, Auto, Disabled
-                    'Process ID': service.ProcessId
-                }
-                matched_services.append(service_status)
+        # SSH connection to the remote server
+        ssh_client = ssh_connect(host, port, username, password)
         
-        if matched_services:
-            return matched_services
-        else:
-            return f"No services matching the pattern '{service_name_pattern}' found on {remote_host}."
+        # Gather information
+        info = {}
+        info.update(get_fs_utilization(ssh_client))
+        info.update(get_cpu_utilization(ssh_client))
+        info.update(get_swap_utilization(ssh_client))
+        info.update(get_faulted_resources(ssh_client))
+        info.update(get_server_status(ssh_client))
 
+        # Close SSH connection
+        ssh_client.close()
+        
+        return info
     except Exception as e:
-        return f"Error connecting to {remote_host}: {e}"
+        print(f"Error: {e}")
+        return None
 
-# Example Usage:
-remote_host = "remote_computer_ip_or_hostname"
+# Example usage
+host = "your_server_ip"
+port = 22  # Default SSH port
 username = "your_username"
 password = "your_password"
-service_name_pattern = "wuauserv*"  # Example: Partial service name with wildcard (*)
 
-service_info = get_remote_service_status(remote_host, username, password, service_name_pattern)
+server_info = gather_server_info(host, port, username, password)
 
-# Print service status
-if isinstance(service_info, list):
-    for service in service_info:
-        print(f"Service: {service['Display Name']}")
-        print(f"State: {service['State']}")
-        print(f"Status: {service['Status']}")
-        print(f"Start Mode: {service['Start Mode']}")
-        print(f"Process ID: {service['Process ID']}")
-        print("-" * 30)
-else:
-    print(service_info)
+if server_info:
+    print(server_info)
