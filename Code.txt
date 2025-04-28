@@ -14,28 +14,39 @@ import pythoncom
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.colors import LinearSegmentedColormap
+import tkinter.font as tkfont
+from tkinter import Canvas
 
 class SystemHealthCheckDashboard(ttkb.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.pack(fill="both", expand=True)
-        user1 = "user1" #Windows 6 servers
-        password1 = "c**************v"
         
-        user2 = "user2" #Linux servers
-        password2 = "M***************1"
+        self.table_canvas = None
+        self.table_font = None
+        self.header_bg = "#2c3e50"
+        self.header_fg = "#ffffff"
+        self.alt_bg = "#f8f9fa"
+        self.cell_height = 22
+        self.padding = 10
+        
+        user1 = "kosv1106" #Windows 6 servers
+        password1 = "c3RM21nvPx2&%32fsp93v"
+        
+        user2 = "kosv1388" #Linux servers
+        password2 = "M7!k28p&c30tyBt1"
         
         self.server_credentials = {
-            "serv1": {"type": "Windows", "user": user1, "password": password1},
-            "serv2": {"type": "Windows", "user": user1, "password": password1},
-            "serv3": {"type": "Windows", "user": user1, "password": password1},
-            "serv4": {"type": "Windows", "user": user1, "password": password1},
-            "serv5": {"type": "Windows", "user": user1, "password": password1},
-            "serv6": {"type": "Windows", "user": user1, "password": password1},
-            "serv7": {"type": "Windows", "user": user1, "password": password1},
-            "serv8": {"type": "Windows", "user": user1, "password": password1},
-            "serv9": {"type": "Windows", "user": user1, "password": password1},
-            "serv10": {"type": "Linux", "user": user2, "password": password2},
+            "USWIW1489": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1490": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1492": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1530": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1531": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW1533": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW714": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW715": {"type": "Windows", "user": user1, "password": password1},
+            "USWIW716": {"type": "Windows", "user": user1, "password": password1},
+            "USWIX846": {"type": "Linux", "user": user2, "password": password2},
         }
 
         # Configure grid layout
@@ -407,7 +418,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             widget.destroy()
         
         #Create Treeview
-        self.create_treeview_table()
+        self.create_canvas_table()
         # Create plots
         self.create_plots()
         # Update plots with actual data
@@ -564,93 +575,152 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         else:
             return "success"
     
-    def create_treeview_table(self):
+    def create_canvas_table(self):
+        """Create a canvas-based table to display server metrics"""
+        # Create container frame
+        container_frame = ttkb.Frame(self.content_frame)
+        container_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
-        container_frame = ttkb.Frame(self.content_frame, height=300)
-        container_frame.pack(fill="both", expand=True, padx=10)
+        # Create scrollable canvas
+        self.table_canvas = Canvas(container_frame, bg="white", highlightthickness=0)
+        self.table_canvas.pack(fill="both", expand=True)
         
-        def get_color(value, threshold1=95, threshold2=85):
-            """Returns a color based on value."""
-            if value >= threshold1:
-                return "#ff0000"  # Red (danger)
-            elif value >= threshold2:
-                return "#ffff00"  # Yellow (warning)
+        # Initialize font
+        self.table_font = tkfont.Font(family="Calibri", size=10)
+        
+        self.table_canvas.bind("<Configure>", lambda e: self.draw_table())
+            
+    def get_column_widths(self, headers, data, available_width):
+        """Calculate column widths based on content"""
+        max_text_widths = []
+        for col_index in range(len(headers)):
+            column_texts = [headers[col_index]] + [str(row[col_index]) for row in data]
+            max_width = max(self.table_font.measure(text) for text in column_texts) + self.padding
+            max_text_widths.append(max_width)
+
+        total_content_width = sum(max_text_widths)
+        
+        if total_content_width < available_width:
+            # Distribute extra width proportionally
+            extra = available_width - total_content_width
+            max_text_widths = [w + (extra * w / total_content_width) for w in max_text_widths]
+            
+        return max_text_widths
+    
+    def get_metric_color(self, value):
+        """Determine color based on metric value"""
+        if isinstance(value, str):
+            if "%" in value:
+                try:
+                    num = float(value.replace("%", ""))
+                    if num >= 95:
+                        return "#c62828"  # Red for critical f44336
+                    elif num >= 85:
+                        return "#f57c00"  # Orange for warning ff9800
+                    else:
+                        return "#2e7d32"  # Green for good 4caf50
+                except ValueError:
+                    return "black"
+            return "black"
+        else:
+            if value >= 95:
+                return "#c62828"
+            elif value >= 85:
+                return "#f57c00"
             else:
-                return "#00ff00"  # Green (success)
-
-        # Create Treeview widget using ttkbootstrap's tb.Treeview
-        tree = ttkb.Treeview(container_frame, bootstyle="primary", columns=("Status", "Type", "Ping", "RDP/SSH", "CPU Usage", "RAM Usage", "C Drive", "D Drive", "Uptime"))
-        server_data = self.server_details.copy()
-        # Define columns
-        tree.column("#0", width=110, anchor="w")  # Tree column (for devices)
-        tree.column("Status", width=110, anchor="center")
-        tree.column("Type", width=100, anchor="center")
-        tree.column("Ping", width=100, anchor="center")
-        tree.column("RDP/SSH", width=100, anchor="center")
-        tree.column("CPU Usage", width=110, anchor="center")
-        tree.column("RAM Usage", width=110, anchor="center")
-        tree.column("C Drive", width=110, anchor="center")
-        tree.column("D Drive", width=110, anchor="center")
-        tree.column("Uptime", width=110, anchor="center")
-
-        # Define headings
-        tree.heading("#0", text="Device", anchor="w")
-        tree.heading("Status", text="Status", anchor="center")
-        tree.heading("Type", text="Type", anchor="center")
-        tree.heading("Ping", text="Ping", anchor="center")
-        tree.heading("RDP/SSH", text="RDP/SSH", anchor="center")
-        tree.heading("CPU Usage", text="CPU Usage (%)", anchor="center")
-        tree.heading("RAM Usage", text="RAM Usage (%)", anchor="center")
-        tree.heading("C Drive", text="C Drive (%)", anchor="center")
-        tree.heading("D Drive", text="D Drive (%)", anchor="center")
-        tree.heading("Uptime", text="Uptime (days)", anchor="center")
-
-        # Insert data
-        for device, stats in server_data.items():
-            ram_color = get_color(stats['ram_usage'])
-            c_drive_color = get_color(stats['C_drive'])
-            d_drive_color = get_color(stats['D_drive'])
+                return "#2e7d32"
+    
+    def draw_table(self):
+        """Draw the table with server metrics"""
+        if not self.server_details:
+            return
             
-            style = ttk.Style()
-            style.configure("Treeview.Heading", font=('Calibri', 11, "bold"))
-            style.configure("Treeview", font=('Microsoft Sans Serif', 10))
-            style.configure("Treeview", rowheight=40)
+        # Prepare headers and data
+        headers = [
+            "Server", "Status", "Type", "Ping", "RDP/SSH", 
+            "CPU Usage", "RAM Usage", "C Drive", "D Drive", "Uptime"
+        ]
+        
+        data = []
+        for server, metrics in self.server_details.items():
+            row = [
+                server,
+                metrics['status'],
+                self.server_credentials[server]['type'],
+                "✔" if metrics['ping'] else "✖",
+                "✔" if metrics['rdp/ssh'] else "✖",
+                f"{metrics['cpu_usage']}%" if metrics['status'] == 'Online' else "N/A",
+                f"{metrics['ram_usage']}%" if metrics['status'] == 'Online' else "N/A",
+                f"{metrics['C_drive']}%" if metrics['status'] == 'Online' else "N/A",
+                f"{metrics['D_drive']}%" if metrics['status'] == 'Online' and 'D_drive' in metrics else "N/A",
+                f"{metrics['uptime']} days" if metrics['status'] == 'Online' else "N/A"
+            ]
+            data.append(row)
+        
+        # Clear existing items
+        self.table_canvas.delete("all")
+        
+        # Get current canvas width
+        canvas_width = self.table_canvas.winfo_width()
+        if canvas_width < 100:  # Minimum width
+            canvas_width = 1000
             
-            cpu_usage = "N/A" if stats['status'] == 'Offline' else f"{stats['cpu_usage']} %"
-            ram_usage = "N/A" if stats['status'] == 'Offline' else f"{stats['ram_usage']} %"
-            ram_detailed = {'total':"N/A", 'used':"N/A"} if stats['status'] == 'Offline' else {'total':f"{stats['ram_detailed']['total']} GB", 'used': f"{stats['ram_detailed']['used']} GB"}
-            C_drive = "N/A" if stats['status'] == 'Offline' else f"{stats['C_drive']} %"
-            D_drive = "N/A" if stats['status'] == 'Offline' else f"{stats['D_drive']} %"
-            C_detailed = {'total':"N/A", 'used':"N/A"} if stats['status'] == 'Offline' else {'total':f"{stats['C_detailed']['total']} GB", 'used': f"{stats['C_detailed']['used']} GB"}
-            D_detailed = {'total':"N/A", 'used':"N/A"} if stats['status'] == 'Offline' else {'total':f"{stats['D_detailed']['total']} GB", 'used': f"{stats['D_detailed']['used']} GB"}
-            uptime = "N/A" if stats['status'] == 'Offline' else f"{stats['uptime']} Days"
+        # Calculate column widths
+        col_widths = self.get_column_widths(headers, data, canvas_width)
+        
+        # Calculate total height needed
+        total_height = ((len(data) + 1) * self.cell_height) + 5
+        
+        # Configure canvas scroll region
+        self.table_canvas.config(height=total_height)
+        
+        # Draw headers
+        x = 0
+        for i, header in enumerate(headers):
+            w = col_widths[i]
+            self.table_canvas.create_rectangle(
+                x, 0, x + w, self.cell_height, 
+                fill=self.header_bg, outline="gray"
+            )
+            self.table_canvas.create_text(
+                x + w // 2, self.cell_height // 2, 
+                text=header, fill=self.header_fg, 
+                font=("Calibri", 10, "bold")
+            )
+            x += w
+        
+        # Draw rows
+        for r, row in enumerate(data):
+            y0 = (r + 1) * self.cell_height
+            y1 = y0 + self.cell_height
+            bg_color = self.alt_bg if r % 2 == 0 else "white"
+            x = 0
             
-            # Main device node
-            parent = tree.insert("", "end", text=device, values=(stats['status'], self.server_credentials[device]['type'], stats['ping'], stats['rdp/ssh'], cpu_usage, ram_usage, C_drive, D_drive, uptime))
-
-            # Insert RAM detailed info under each device
-            ram_item = tree.insert(parent, "end", text="RAM", values=(f"Total: {ram_detailed['total']}", f"Used: {ram_detailed['used']}", "", "", ""))
-            
-            # Apply color tag to specific columns (e.g., RAM Usage)
-            tree.tag_configure(f"ram_{device}", background=ram_color)
-            tree.item(ram_item, tags=(f"ram_{device}",))
-
-            # Insert C drive detailed info under each device
-            c_item = tree.insert(parent, "end", text="C Drive", values=(f"Total: {C_detailed['total']}", f"Used: {C_detailed['used']}", "", "", ""))
-            
-            # Apply color tag to specific columns (e.g., C Drive Usage)
-            tree.tag_configure(f"c_drive_{device}", background=c_drive_color)
-            tree.item(c_item, tags=(f"c_drive_{device}",))
-
-            # Insert D drive detailed info under each device
-            d_item = tree.insert(parent, "end", text="D Drive", values=(f"Total: {D_detailed['total']}", f"Used: {D_detailed['used']}", "", "", ""))
-            
-            # Apply color tag to specific columns (e.g., D Drive Usage)
-            tree.tag_configure(f"d_drive_{device}", background=d_drive_color)
-            tree.item(d_item, tags=(f"d_drive_{device}",))
-
-        # Pack the treeview widget into the window
-        tree.pack(fill="both", expand=True)
+            for c, cell in enumerate(row):
+                w = col_widths[c]
+                self.table_canvas.create_rectangle(
+                    x, y0, x + w, y1, 
+                    fill=bg_color, outline="gray"
+                )
+                
+                # Determine text color based on metric
+                if c >= 5 and c <= 8 and "%" in str(cell):  # Metric columns
+                    try:
+                        value = float(str(cell).replace("%", ""))
+                        color = self.get_metric_color(value)
+                    except ValueError:
+                        color = "black"
+                elif c == 3 or c == 4:  # Ping/RDP columns
+                    color = "#4caf50" if cell == "✔" else "#f44336"
+                else:
+                    color = "black"
+                
+                self.table_canvas.create_text(
+                    x + w // 2, (y0 + y1) // 2, 
+                    text=cell, fill=color, 
+                    font=("Calibri", 10)
+                )
+                x += w
 
     def update_plots_with_metrics(self):
         """Update all plots with actual metrics data"""
