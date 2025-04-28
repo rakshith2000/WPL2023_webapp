@@ -1,32 +1,55 @@
 import wmi
+import re
 
-def get_service_status(service_name):
-    # Initialize the WMI client
-    c = wmi.WMI()
+def get_remote_service_status(remote_host, username, password, service_name_pattern):
+    try:
+        # Connect to the remote computer using WMI with provided credentials
+        connection = wmi.WMI(computer=remote_host, user=username, password=password)
 
-    # Query WMI for the status of the service
-    for service in c.Win32_Service(Name=service_name):
-        service_status = {
-            'Service Name': service.Name,
-            'Display Name': service.DisplayName,
-            'State': service.State,          # Running, Stopped, etc.
-            'Status': service.Status,        # Started, Stopped, etc.
-            'Start Mode': service.StartMode, # Manual, Auto, Disabled
-            'Process ID': service.ProcessId
-        }
-        return service_status
-    return f"Service '{service_name}' not found."
+        # Prepare a regular expression pattern for case-insensitive search and wildcard support
+        # Replace '*' with '.*' and '?' with '.' for regex compatibility
+        regex_pattern = service_name_pattern.replace('*', '.*').replace('?', '.')
+        regex_pattern = f"^{regex_pattern}$"  # Anchors the pattern to match the full service name
+
+        # Query for all services
+        matched_services = []
+        for service in connection.Win32_Service():
+            # Match service name using the regex pattern (case-insensitive)
+            if re.match(regex_pattern, service.Name, re.IGNORECASE):
+                service_status = {
+                    'Service Name': service.Name,
+                    'Display Name': service.DisplayName,
+                    'State': service.State,           # Running, Stopped, etc.
+                    'Status': service.Status,         # Started, Stopped, etc.
+                    'Start Mode': service.StartMode,  # Manual, Auto, Disabled
+                    'Process ID': service.ProcessId
+                }
+                matched_services.append(service_status)
+        
+        if matched_services:
+            return matched_services
+        else:
+            return f"No services matching the pattern '{service_name_pattern}' found on {remote_host}."
+
+    except Exception as e:
+        return f"Error connecting to {remote_host}: {e}"
 
 # Example Usage:
-service_name = "wuauserv"  # Windows Update Service
-service_info = get_service_status(service_name)
+remote_host = "remote_computer_ip_or_hostname"
+username = "your_username"
+password = "your_password"
+service_name_pattern = "wuauserv*"  # Example: Partial service name with wildcard (*)
+
+service_info = get_remote_service_status(remote_host, username, password, service_name_pattern)
 
 # Print service status
-if isinstance(service_info, dict):
-    print(f"Service: {service_info['Display Name']}")
-    print(f"State: {service_info['State']}")
-    print(f"Status: {service_info['Status']}")
-    print(f"Start Mode: {service_info['Start Mode']}")
-    print(f"Process ID: {service_info['Process ID']}")
+if isinstance(service_info, list):
+    for service in service_info:
+        print(f"Service: {service['Display Name']}")
+        print(f"State: {service['State']}")
+        print(f"Status: {service['Status']}")
+        print(f"Start Mode: {service['Start Mode']}")
+        print(f"Process ID: {service['Process ID']}")
+        print("-" * 30)
 else:
     print(service_info)
