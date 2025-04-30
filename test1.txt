@@ -1,91 +1,42 @@
-import paramiko
-import re
-
-# Function to execute SSH command and return output
-def execute_command(ssh_client, command):
-    stdin, stdout, stderr = ssh_client.exec_command(command)
-    return stdout.read().decode('utf-8')
-
-# SSH connection setup
-def ssh_connect(host, port, username, password):
-    ssh_client = paramiko.SSHClient()
-    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh_client.connect(host, port=port, username=username, password=password)
-    return ssh_client
-
-# Function to get filesystem utilization
-def get_fs_utilization(ssh_client):
-    fs_utilization = {}
-    command = "df -hlPT | egrep -v 'tmpfs|Type'"
-    output = execute_command(ssh_client, command)
-    
-    for line in output.splitlines():
-        parts = line.split()
-        if len(parts) > 6:
-            utilization = int(re.search(r'(\d+)%', parts[5]).group(1))
-            if utilization > 90:
-                fs_utilization[parts[6]] = f"Filesystem {parts[6]} is utilized at {parts[5]}"
-    return fs_utilization
-
-# Function to get CPU utilization
-def get_cpu_utilization(ssh_client):
-    command = "sar -u 1 5 | awk '/Average:/ {print 100 - $NF}'"
-    output = execute_command(ssh_client, command)
-    return {"cpu_utilization": output.strip()}
-
-# Function to get Swap utilization
-def get_swap_utilization(ssh_client):
-    swap_utilization = {}
-    command = "free -m | awk '/Swap:/ {print $3,$2}'"
-    output = execute_command(ssh_client, command)
-    
-    for line in output.splitlines():
-        used, total = line.split()
-        swap_percentage = (int(used) / int(total)) * 100
-        swap_utilization['swap_utilization'] = f"{swap_percentage:.2f}%"
-    return swap_utilization
-
-# Function to check for faulted resources
-def get_faulted_resources(ssh_client):
-    command = "sudo /opt/VRTS/bin/hastatus -sum"
-    output = execute_command(ssh_client, command)
-    return {"faulted_resources": output.strip()}
-
-# Function to check server uptime and last reboot
-def get_server_status(ssh_client):
-    command = "uptime"
-    output = execute_command(ssh_client, command)
-    return {"server_status": output.strip()}
-
-# Main function to gather all information
-def gather_server_info(host, port, username, password):
-    try:
-        # SSH connection to the remote server
-        ssh_client = ssh_connect(host, port, username, password)
-        
-        # Gather information
-        info = {}
-        info.update(get_fs_utilization(ssh_client))
-        info.update(get_cpu_utilization(ssh_client))
-        info.update(get_swap_utilization(ssh_client))
-        info.update(get_faulted_resources(ssh_client))
-        info.update(get_server_status(ssh_client))
-
-        # Close SSH connection
-        ssh_client.close()
-        
-        return info
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
-
-# Example usage
-host = "your_server_ip"
-port = 22  # Default SSH port
-username = "your_username"
-password = "your_password"
-
-server_info = gather_server_info(host, port, username, password)
-
-if server_info:
-    print(server_info)
+Executed command
+#!/bin/sh
+#
+#echo "*  waiting 5 seconds *"
+#sleep 5
+h=`ps -ef|egrep 'archcopy|archzip|archxfer'|grep -v grep|wc -l`
+i=`ps -ef|grep ora_|grep -v grep|wc -l`
+j=`ps -ef|grep tnslsnr|grep -v grep|wc -l`
+k=`expr $i + $j`
+if [ $h -eq 0 ]&&[ $k -eq 0 ]
+then
+ echo "********************************************"
+ echo "*  CHECKDOWN complete. No Oracle running.  *"
+ echo "********************************************"
+else
+ echo "*****************************************"  > /tmp/checkdown.msg
+ echo "*  CHECKDOWN - Current Oracle Status.   *" >> /tmp/checkdown.msg
+ echo "*****************************************" >> /tmp/checkdown.msg
+ echo "" >> /tmp/checkdown.msg
+ echo $k "tasks still active (list follows)" >> /tmp/checkdown.msg
+ echo "" >> /tmp/checkdown.msg
+ ps -ef|grep ora_pmon|grep -v grep >> /tmp/checkdown.msg
+ ps -ef|grep tnslsnr|grep -v grep >> /tmp/checkdown.msg
+ echo "" >> /tmp/checkdown.msg
+ countpmon=`ps -ef|grep ora_pmon|grep -v grep|wc -l`
+ countlsnr=`ps -ef|grep tnslsnr|grep -v grep|wc -l`
+ countcopy=`ps -ef|grep archcopy|grep -v grep|wc -l`
+ countzip=`ps -ef|grep archzip|grep -v grep|wc -l`
+ countxfer=`ps -ef|grep archxfer|grep -v grep|wc -l`
+ echo "Number of Oracle instances running   = $countpmon" >> /tmp/checkdown.msg
+ echo "Number of Oracle listeners running   = $countlsnr" >> /tmp/checkdown.msg
+ echo "Number of archcopy processes running = $countcopy" >> /tmp/checkdown.msg
+ echo "Number of archzip  processes running = $countzip"  >> /tmp/checkdown.msg
+ echo "Number of archxfer processes running = $countxfer" >> /tmp/checkdown.msg
+ echo " " >> /tmp/checkdown.msg
+ echo "There should be 1 databases and 1 listeners active." >> /tmp/checkdown.msg
+ echo "There should be 1 arch* processes running." >> /tmp/checkdown.msg
+ echo "View the /etc/oratab to determine what databases" >> /tmp/checkdown.msg
+ echo "or listeners are missing if the above counts are inaccurate." >> /tmp/checkdown.msg
+ more /tmp/checkdown.msg
+ rm /tmp/checkdown.msg
+fi
