@@ -5,7 +5,7 @@ def export_to_excel(self):
         
     try:
         import openpyxl
-        from openpyxl.styles import PatternFill, Alignment
+        from openpyxl.styles import Font, Alignment
         from openpyxl.utils import get_column_letter
     except ImportError:
         ttkb.dialogs.Messagebox.show_error(
@@ -36,11 +36,11 @@ def export_to_excel(self):
         wb = openpyxl.Workbook()
         
         # Define colors and styles
-        red_fill = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
-        orange_fill = PatternFill(start_color='FFA500', end_color='FFA500', fill_type='solid')
-        green_fill = PatternFill(start_color='00FF00', end_color='00FF00', fill_type='solid')
+        red_font = Font(color='FF0000', bold=True)
+        orange_font = Font(color='FFA500', bold=True)
+        green_font = Font(color='00AA00', bold=True)
+        header_font = Font(color='FFFFFF', bold=True)
         header_fill = PatternFill(start_color='2c3e50', end_color='2c3e50', fill_type='solid')
-        header_font = openpyxl.styles.Font(color='FFFFFF', bold=True)
         top_alignment = Alignment(vertical='top', wrap_text=True)
         
         # ========== Windows Sheet ==========
@@ -70,27 +70,28 @@ def export_to_excel(self):
             
             # Ping and RDP
             ping_cell = ws_windows.cell(row=row_num, column=4, value="✔" if metrics['ping'] else "✖")
-            ping_cell.fill = green_fill if metrics['ping'] else red_fill
+            ping_cell.font = Font(color='00AA00' if metrics['ping'] else 'FF0000', bold=True)
+            
             rdp_cell = ws_windows.cell(row=row_num, column=5, value="✔" if metrics['rdp/ssh'] else "✖")
-            rdp_cell.fill = green_fill if metrics['rdp/ssh'] else red_fill
+            rdp_cell.font = Font(color='00AA00' if metrics['rdp/ssh'] else 'FF0000', bold=True)
             
             # CPU Usage
             cpu_cell = ws_windows.cell(row=row_num, column=6, value=metrics['cpu_usage'])
             if metrics['cpu_usage'] >= 95:
-                cpu_cell.fill = red_fill
+                cpu_cell.font = red_font
             elif metrics['cpu_usage'] >= 85:
-                cpu_cell.fill = orange_fill
+                cpu_cell.font = orange_font
             else:
-                cpu_cell.fill = green_fill
+                cpu_cell.font = green_font
                 
             # RAM Usage
             ram_cell = ws_windows.cell(row=row_num, column=7, value=metrics['ram_usage'])
             if metrics['ram_usage'] >= 95:
-                ram_cell.fill = red_fill
+                ram_cell.font = red_font
             elif metrics['ram_usage'] >= 85:
-                ram_cell.fill = orange_fill
+                ram_cell.font = orange_font
             else:
-                ram_cell.fill = green_fill
+                ram_cell.font = green_font
                 
             ws_windows.cell(row=row_num, column=8, value=metrics['ram_detailed']['total'])
             ws_windows.cell(row=row_num, column=9, value=metrics['ram_detailed']['used'])
@@ -98,11 +99,11 @@ def export_to_excel(self):
             # C Drive
             c_drive_cell = ws_windows.cell(row=row_num, column=10, value=metrics['C_drive'])
             if metrics['C_drive'] >= 95:
-                c_drive_cell.fill = red_fill
+                c_drive_cell.font = red_font
             elif metrics['C_drive'] >= 85:
-                c_drive_cell.fill = orange_fill
+                c_drive_cell.font = orange_font
             else:
-                c_drive_cell.fill = green_fill
+                c_drive_cell.font = green_font
                 
             ws_windows.cell(row=row_num, column=11, value=metrics['C_detailed']['total'])
             ws_windows.cell(row=row_num, column=12, value=metrics['C_detailed']['used'])
@@ -110,11 +111,11 @@ def export_to_excel(self):
             # D Drive
             d_drive_cell = ws_windows.cell(row=row_num, column=13, value=metrics['D_drive'])
             if metrics['D_drive'] >= 95:
-                d_drive_cell.fill = red_fill
+                d_drive_cell.font = red_font
             elif metrics['D_drive'] >= 85:
-                d_drive_cell.fill = orange_fill
+                d_drive_cell.font = orange_font
             else:
-                d_drive_cell.fill = green_fill
+                d_drive_cell.font = green_font
                 
             ws_windows.cell(row=row_num, column=14, value=metrics['D_detailed']['total'])
             ws_windows.cell(row=row_num, column=15, value=metrics['D_detailed']['used'])
@@ -151,36 +152,37 @@ def export_to_excel(self):
             
             # Ping and SSH
             ping_cell = ws_linux.cell(row=row_num, column=4, value="✔" if metrics['ping'] else "✖")
-            ping_cell.fill = green_fill if metrics['ping'] else red_fill
+            ping_cell.font = Font(color='00AA00' if metrics['ping'] else 'FF0000', bold=True)
+            
             ssh_cell = ws_linux.cell(row=row_num, column=5, value="✔" if metrics['rdp/ssh'] else "✖")
-            ssh_cell.fill = green_fill if metrics['rdp/ssh'] else red_fill
+            ssh_cell.font = Font(color='00AA00' if metrics['rdp/ssh'] else 'FF0000', bold=True)
             
             # CPU Usage
             cpu_cell = ws_linux.cell(row=row_num, column=6, value=metrics['cpu_usage'])
             if metrics['cpu_usage'] >= 95:
-                cpu_cell.fill = red_fill
+                cpu_cell.font = red_font
             elif metrics['cpu_usage'] >= 85:
-                cpu_cell.fill = orange_fill
+                cpu_cell.font = orange_font
             else:
-                cpu_cell.fill = green_fill
+                cpu_cell.font = green_font
                 
             # RAM Usage
             ram_cell = ws_linux.cell(row=row_num, column=7, value=metrics['ram_usage'])
             if metrics['ram_usage'] >= 95:
-                ram_cell.fill = red_fill
+                ram_cell.font = red_font
             elif metrics['ram_usage'] >= 85:
-                ram_cell.fill = orange_fill
+                ram_cell.font = orange_font
             else:
-                ram_cell.fill = green_fill
+                ram_cell.font = green_font
                 
             # Swap Usage
             swap_cell = ws_linux.cell(row=row_num, column=8, value=metrics['swap_usage'])
             if metrics['swap_usage'] >= 95:
-                swap_cell.fill = red_fill
+                swap_cell.font = red_font
             elif metrics['swap_usage'] >= 85:
-                swap_cell.fill = orange_fill
+                swap_cell.font = orange_font
             else:
-                swap_cell.fill = green_fill
+                swap_cell.font = green_font
                 
             # FS Usage (multi-line)
             if isinstance(metrics['fs_usage'], dict):
@@ -197,18 +199,18 @@ def export_to_excel(self):
             # C Drive
             c_drive_cell = ws_linux.cell(row=row_num, column=12, value=metrics['C_drive'])
             if metrics['C_drive'] >= 95:
-                c_drive_cell.fill = red_fill
+                c_drive_cell.font = red_font
             elif metrics['C_drive'] >= 85:
-                c_drive_cell.fill = orange_fill
+                c_drive_cell.font = orange_font
             else:
-                c_drive_cell.fill = green_fill
+                c_drive_cell.font = green_font
                 
             ws_linux.cell(row=row_num, column=13, value=metrics['C_detailed']['total'])
             ws_linux.cell(row=row_num, column=14, value=metrics['C_detailed']['used'])
             
             # Cluster IP Ping
             cluster_cell = ws_linux.cell(row=row_num, column=15, value="✔" if metrics['cluster_ping'] else "✖")
-            cluster_cell.fill = green_fill if metrics['cluster_ping'] else red_fill
+            cluster_cell.font = Font(color='00AA00' if metrics['cluster_ping'] else 'FF0000', bold=True)
             
             ws_linux.cell(row=row_num, column=16, value=f"{metrics['uptime']} Days")
             
