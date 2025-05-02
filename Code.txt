@@ -22,7 +22,10 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         super().__init__(master)
         self.pack(fill="both", expand=True)
         
-        self.table_canvas = None
+        self.table_canvas_windows = None
+        self.table_canvas_linux = None
+        self.table_canvas_db = None
+        self.table_canvas_db_cd = None
         self.table_font = None
         self.header_bg = "#2c3e50"
         self.header_fg = "#ffffff"
@@ -106,7 +109,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             text="Export Data",
             bootstyle="info",
             style='Export.TButton',
-            command=self.export_to_csv,
+            command=self.export_to_excel,
             state="disabled"  # Initially disabled
         )
         self.export_btn.pack(fill="x", pady=(0, 20))
@@ -147,8 +150,11 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             'C_detailed': {'total': 0, 'used': 0},
             'D_drive': 0,
             'D_detailed': {'total': 0, 'used': 0},
-            'uptime': 0,
-            'status': 'Offline'
+            'uptime': "0 Days 0 Hrs",
+            'status': 'Offline',
+            'moca_serv' : '-',
+            'refs_serv' : '-',
+            'blueyonder_serv' : '-',
         }
         
         try:
@@ -184,7 +190,9 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             #Uptime
             last_boot = datetime.strptime(conn.Win32_OperatingSystem()[0].LastBootUpTime.split('.')[0], '%Y%m%d%H%M%S')
             uptime = datetime.now() - last_boot
-            metrics['uptime'] = uptime.days
+            uptime_days = uptime.days
+            uptime_hours = uptime.seconds // 3600
+            metrics['uptime'] = f"{uptime_days} Days {uptime_hours} Hrs"
             # Drive Usage (C: and D:)
             drives = conn.Win32_LogicalDisk(DriveType=3)
             for drive in drives:
@@ -201,6 +209,35 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                                             'used' : round((int(drive.Size) - int(drive.FreeSpace)) / (1024 ** 3), 2)
                                             }
             metrics['status'] = 'Online'
+            
+            def get_service_stats():
+                service_patterns = {
+                    'moca_serv': 'moca*',
+                    'refs_serv': 'REFS*',
+                    'blueyonder_serv': 'RedPrairie*'
+                }
+                
+                results = {key: "-" for key in service_patterns.keys()}
+                
+
+                # Query for all services
+                for service in conn.Win32_Service():
+                    for key, pattern in service_patterns.items():
+                        if results[key] != "-":
+                            continue
+                        regex_pattern = pattern.replace('*', '.*').replace('?', '.')
+                        regex_pattern = f"^{regex_pattern}$"
+                        
+                        # Match service name using the regex pattern (case-insensitive)
+                        if re.match(regex_pattern, service.Name, re.IGNORECASE):
+                            display_name = service.DisplayName
+                            display_suffix = f" ({display_name.split('(')[1]}" if '(' in display_name else ""
+                            results[key] = f"{service.State}{display_suffix}"
+                            break
+                            
+                return results
+            service_stats = get_service_stats()
+            metrics.update(service_stats)
         except Exception as e:
             print(f"Error getting metrics for {server}: {e}")
         finally:
@@ -214,12 +251,22 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             'rdp/ssh': False,
             'cpu_usage': 0,
             'ram_usage': 0,
+            'swap_usage': 0,
+            'faulted_resources' : 'NA',
+            'fs_usage' : "None",
+            'pmon_stat' : "No DB instances\nrunning",
+            'tns_stat' : "No Listners\nrunning",
+            'daily_backup' : "No Active daily\nbackup running",
+            'weekly_backup' : "No Active weekly\nbackup running",
+            'archive_log' : "Not archive log\nfiles found",
+            'checkdown' : "Not Found",
+            'cluster_ping' : False,
             'ram_detailed': {'total': 0, 'used': 0},
             'C_drive': 0,
             'C_detailed': {'total': 0, 'used': 0},
             'D_drive': 0,
             'D_detailed': {'total': 0, 'used': 0},
-            'uptime' : 0,
+            'uptime' : "0 Days 0 Hrs",
             'status': 'offline'
         }
         try:
@@ -228,11 +275,77 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                                        text=True).returncode
             metrics['ping'] = ping_result == 0
             
+            cluster_ping = subprocess.run(['ping', '-n', '2', "10.20.54.247"], 
+                                       capture_output=True, 
+                                       text=True).returncode
+            metrics['cluster_ping'] = cluster_ping == 0
+            
             if not metrics['ping']:
                 return {server: metrics}
                 
             # Check SSH
             metrics['rdp/ssh'] = self.check_rdp_connectivity(server, port=22)
+            
+            def execute_command(ssh_client, command):
+                stdin, stdout, stderr = ssh_client.exec_command(command)
+                return stdout.read().decode('utf-8')
+                
+            def get_swap_utilization(ssh_client):
+                command = "free -m | awk '/Swap:/ {print $3,$2}'"
+                output = execute_command(ssh_client, command)
+                
+                for line in output.splitlines():
+                    used, total = line.split()
+                    swap_percentage = round((int(used) / int(total)) * 100, 2)
+                return {'swap_usage' : swap_percentage}
+                
+            def get_faulted_resources(ssh_client):
+                command = "sudo /opt/VRTS/bin/hastatus -sum"
+                output = execute_command(ssh_client, command)
+                return {"faulted_resources": output.strip() if output.strip() else 'NA'}
+            
+            def get_db_stat(ssh_client):
+                command = """ps -ef | grep [p]mon | awk '$1 == "oracle" {print $1, $8}'"""
+                output = execute_command(ssh_client, command)
+                return output.splitlines()
+                
+            def get_listner_stat(ssh_client):
+                command = """ps -ef | grep [t]ns | awk '$1 == "oracle" {print $1, $8}'"""
+                output = execute_command(ssh_client, command)
+                return output.splitlines()
+                
+            def get_daily_bkup_stat(ssh_client):
+                command = """ps -ef | grep [d]aily | awk '{print $1, $5, $7, $8}'"""
+                output = execute_command(ssh_client, command)
+                return output.splitlines()
+                
+            def get_weekly_bkup_stat(ssh_client):
+                command = """ps -ef | grep [w]eekly | awk '{print $1, $5, $7, $8}'"""
+                output = execute_command(ssh_client, command)
+                return output.splitlines()
+                
+            def get_archive_logs_stat(ssh_client):
+                command = """df -h /oralogs* | grep /oralogs* | awk '{print $1, $5, $6}'"""
+                output = execute_command(ssh_client, command)
+                return output.splitlines()
+                
+            def get_checkdown_stat(ssh_client):
+                command = """/common/oracle/checkdown"""
+                output = execute_command(ssh_client, command)
+                return output.splitlines()
+                
+            def get_fs_utilization(ssh_client):
+                fs_utilization = {}
+                command = "df -hlPT | egrep -v 'tmpfs|Type'"
+                output = execute_command(ssh_client, command)
+                
+                for line in output.splitlines():
+                    parts = line.split()
+                    if len(parts) > 6:
+                        utilization = int(re.search(r'(\d+)%', parts[5]).group(1))
+                        if utilization > 90:
+                            fs_utilization[parts[6]] = int(parts[5].split('%')[0])
+                return fs_utilization if fs_utilization else "None"
             
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -268,7 +381,6 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                     })
                 except (ValueError, IndexError):
                     continue
-            client.close()
             metrics['cpu_usage'] = cpu_usage
             metrics['ram_usage'] = round((used_ram_gb/total_ram_gb) * 100, 1)
             metrics['ram_detailed'] = {
@@ -282,6 +394,24 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                                         'used' : disks[0]['used_gb']
                                         }
             metrics['status'] = 'Online'
+            swap_usage = get_swap_utilization(client)
+            metrics['swap_usage'] = swap_usage['swap_usage']
+            faulted_resources = get_faulted_resources(client)
+            metrics['faulted_resources'] = faulted_resources['faulted_resources']
+            metrics['fs_usage'] = get_fs_utilization(client)
+            pmon_stat = get_db_stat(client) 
+            metrics['pmon_stat'] = pmon_stat if pmon_stat else "No DB instances\nrunning"
+            tns_stat = get_listner_stat(client) 
+            metrics['tns_stat'] = tns_stat if tns_stat else "No Listners\nrunning"
+            daily_backup = get_daily_bkup_stat(client) 
+            metrics['daily_backup'] = daily_backup if daily_backup else "No Active Daily\nBackup running"
+            weekly_backup = get_weekly_bkup_stat(client) 
+            metrics['weekly_backup'] = weekly_backup if weekly_backup else "No Active Weekly\nBackup running"
+            archive_log = get_archive_logs_stat(client)
+            metrics['archive_log'] = archive_log if archive_log else "No archive\nlog files found"
+            checkdown = get_checkdown_stat(client)
+            metrics['checkdown'] = checkdown if checkdown else "Not found"
+            client.close()
         except Exception as e:
             print(f"Error getting metrics for {server}: {e}")
         
@@ -349,16 +479,28 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         finally:
             self.overview_btn.config(state="normal")
             
-    def export_to_csv(self):
-        """Export the collected metrics to a CSV file with file dialog for path selection"""
+    def export_to_excel(self):
+        """Export the collected metrics to an Excel file with file dialog for path selection"""
         if not self.windows_details and not self.linux_details:
             return
             
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, Alignment, PatternFill
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            ttkb.dialogs.Messagebox.show_error(
+                title="Export Failed",
+                message="The openpyxl library is required for Excel export. Please install it with:\n\npip install openpyxl",
+                parent=self
+            )
+            return
+        
         # Create a file dialog to get the save path
         file_path = filedialog.asksaveasfilename(
-            title="Save Metrics as CSV",
-            initialfile=f"JDA_HC_Data_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.csv",
-            filetypes=[('CSV Files', '*.csv')],
+            title="Save Metrics as Excel",
+            initialfile=f"JDA_HC_Data_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.xlsx",
+            filetypes=[('Excel Files', '*.xlsx')],
             parent=self
         )   
         
@@ -366,63 +508,305 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         if not file_path:
             return
             
-        # Ensure the file has .csv extension
-        if not file_path.lower().endswith('.csv'):
-            file_path += '.csv'
+        # Ensure the file has .xlsx extension
+        if not file_path.lower().endswith('.xlsx'):
+            file_path += '.xlsx'
         
         try:
-            with open(file_path, 'w', newline='') as csvfile:
-                fieldnames = [
-                    'Server', 'Status', 'Type', 'Ping', 'RDP/SSH', 
-                    'CPU Usage (%)', 'RAM Usage (%)', 'RAM Total (GB)', 'RAM Used (GB)',
-                    'C Drive Usage (%)', 'C Drive Total (GB)', 'C Drive Used (GB)',
-                    'D Drive Usage (%)', 'D Drive Total (GB)', 'D Drive Used (GB)',
-                    'Uptime (days)'
-                ]
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
+            # Create a new workbook
+            wb = openpyxl.Workbook()
+            
+            # Define colors and styles
+            header_fill = PatternFill(start_color='2c3e50', end_color='2c3e50', fill_type='solid')
+            header_font = Font(color='FFFFFF', bold=True)
+            red_font = Font(color='FF0000')
+            orange_font = Font(color='FFA500')
+            green_font = Font(color='00AA00')
+            top_alignment = Alignment(vertical='top', wrap_text=True)
+            center_alignment = Alignment(horizontal='center', wrap_text=True)
+            top_center = Alignment(vertical='top', horizontal='center', wrap_text=True)
+            
+            # ========== Windows Sheet ==========
+            ws_windows = wb.active
+            ws_windows.title = "Windows Servers"
+            
+            # Windows headers
+            windows_headers = [
+                'Server', 'Status', 'Type', 'Ping', 'RDP/SSH', 
+                'CPU Usage (%)', 'RAM Usage (%)', 'RAM Total (GB)', 'RAM Used (GB)',
+                'C Drive Usage (%)', 'C Drive Total (GB)', 'C Drive Used (GB)',
+                'D Drive Usage (%)', 'D Drive Total (GB)', 'D Drive Used (GB)',
+                'Uptime', 'MOCA Service', 'REFS Service', 'BlueYonder Service'
+            ]
+            
+            # Write Windows headers
+            for col_num, header in enumerate(windows_headers, 1):
+                cell = ws_windows.cell(row=1, column=col_num, value=header)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center')
+            
+            # Write Windows data
+            for row_num, (server, metrics) in enumerate(self.windows_details.items(), 2):
+                win_server = ws_windows.cell(row=row_num, column=1, value=server)
+                win_server.alignment = top_alignment
+                win_status = ws_windows.cell(row=row_num, column=2, value=metrics['status'])
+                win_status.alignment = top_alignment
+                win_type = ws_windows.cell(row=row_num, column=3, value='Windows')
+                win_type.alignment = top_alignment
                 
-                # Write Windows server data
-                for server, metrics in self.windows_details.items():
-                    writer.writerow({
-                        'Server': server,
-                        'Status': metrics['status'],
-                        'Type': 'Windows',
-                        'Ping': metrics['ping'],
-                        'RDP/SSH': metrics['rdp/ssh'],
-                        'CPU Usage (%)': metrics['cpu_usage'],
-                        'RAM Usage (%)': metrics['ram_usage'],
-                        'RAM Total (GB)': metrics['ram_detailed']['total'],
-                        'RAM Used (GB)': metrics['ram_detailed']['used'],
-                        'C Drive Usage (%)': metrics['C_drive'],
-                        'C Drive Total (GB)': metrics['C_detailed']['total'],
-                        'C Drive Used (GB)': metrics['C_detailed']['used'],
-                        'D Drive Usage (%)': metrics['D_drive'],
-                        'D Drive Total (GB)': metrics['D_detailed']['total'],
-                        'D Drive Used (GB)': metrics['D_detailed']['used'],
-                        'Uptime (days)': metrics['uptime']
-                    })
+                # Ping and RDP
+                ping_cell = ws_windows.cell(row=row_num, column=4, value="✔" if metrics['ping'] else "✖")
+                ping_cell.font = Font(color='00AA00' if metrics['ping'] else 'FF0000', bold=True)
+                ping_cell.alignment = top_center
                 
-                # Write Linux server data
-                for server, metrics in self.linux_details.items():
-                    writer.writerow({
-                        'Server': server,
-                        'Status': metrics['status'],
-                        'Type': 'Linux',
-                        'Ping': metrics['ping'],
-                        'RDP/SSH': metrics['rdp/ssh'],
-                        'CPU Usage (%)': metrics['cpu_usage'],
-                        'RAM Usage (%)': metrics['ram_usage'],
-                        'RAM Total (GB)': metrics['ram_detailed']['total'],
-                        'RAM Used (GB)': metrics['ram_detailed']['used'],
-                        'C Drive Usage (%)': metrics['C_drive'],
-                        'C Drive Total (GB)': metrics['C_detailed']['total'],
-                        'C Drive Used (GB)': metrics['C_detailed']['used'],
-                        'D Drive Usage (%)': 'N/A',
-                        'D Drive Total (GB)': 'N/A',
-                        'D Drive Used (GB)': 'N/A',
-                        'Uptime (days)': metrics['uptime']
-                    })
+                rdp_cell = ws_windows.cell(row=row_num, column=5, value="✔" if metrics['rdp/ssh'] else "✖")
+                rdp_cell.font = Font(color='00AA00' if metrics['rdp/ssh'] else 'FF0000', bold=True)
+                rdp_cell.alignment = top_center
+                
+                # CPU Usage
+                cpu_usage = f"{metrics['cpu_usage']} %" if metrics['status'] == 'Online' else "N/A"
+                cpu_cell = ws_windows.cell(row=row_num, column=6, value=cpu_usage)
+                if cpu_usage != "N/A":
+                    if metrics['cpu_usage'] >= 95:
+                        cpu_cell.font = red_font
+                    elif metrics['cpu_usage'] >= 85:
+                        cpu_cell.font = orange_font
+                    else:
+                        cpu_cell.font = green_font
+                cpu_cell.alignment = top_center
+                
+                # RAM Usage
+                ram_usage = f"{metrics['ram_usage']} %" if metrics['status'] == 'Online' else "N/A"
+                ram_cell = ws_windows.cell(row=row_num, column=7, value=ram_usage)
+                if ram_usage != "N/A":
+                    if metrics['ram_usage'] >= 95:
+                        ram_cell.font = red_font
+                    elif metrics['ram_usage'] >= 85:
+                        ram_cell.font = orange_font
+                    else:
+                        ram_cell.font = green_font
+                ram_cell.alignment = top_center
+                    
+                
+                ws_windows.cell(row=row_num, column=8, value=f"{metrics['ram_detailed']['total']} GB" if metrics['status'] == 'Online' else "N/A").alignment = top_center
+                ws_windows.cell(row=row_num, column=9, value=f"{metrics['ram_detailed']['used']} GB" if metrics['status'] == 'Online' else "N/A").alignment = top_center
+                
+                # C Drive
+                c_usage = f"{metrics['C_drive']} %" if metrics['status'] == 'Online' else "N/A"
+                c_drive_cell = ws_windows.cell(row=row_num, column=10, value=c_usage)
+                if c_usage != "N/A":
+                    if metrics['C_drive'] >= 95:
+                        c_drive_cell.font = red_font
+                    elif metrics['C_drive'] >= 85:
+                        c_drive_cell.font = orange_font
+                    else:
+                        c_drive_cell.font = green_font
+                c_drive_cell.alignment = top_center
+                
+                ws_windows.cell(row=row_num, column=11, value=f"{metrics['C_detailed']['total']} GB" if metrics['status'] == 'Online' else "N/A").alignment = top_center
+                ws_windows.cell(row=row_num, column=12, value=f"{metrics['C_detailed']['used']} GB" if metrics['status'] == 'Online' else "N/A").alignment = top_center
+                
+                # D Drive
+                d_usage = f"{metrics['D_drive']} %" if metrics['status'] == 'Online' else "N/A"
+                d_drive_cell = ws_windows.cell(row=row_num, column=13, value=d_usage)
+                if d_usage != "N/A":
+                    if metrics['D_drive'] >= 95:
+                        d_drive_cell.font = red_font
+                    elif metrics['D_drive'] >= 85:
+                        d_drive_cell.font = orange_font
+                    else:
+                        d_drive_cell.font = green_font
+                d_drive_cell.alignment = top_center
+                    
+                ws_windows.cell(row=row_num, column=14, value=f"{metrics['D_detailed']['total']} GB" if metrics['status'] == 'Online' else "N/A").alignment = top_center
+                ws_windows.cell(row=row_num, column=15, value=f"{metrics['D_detailed']['used']} GB" if metrics['status'] == 'Online' else "N/A").alignment = top_center
+                
+                ws_windows.cell(row=row_num, column=16, value=metrics['uptime'] if metrics['status'] == 'Online' else "N/A").alignment = top_center
+                moca_cell = ws_windows.cell(row=row_num, column=17, value=metrics['moca_serv'] if metrics['status'] == 'Online' else "N/A")
+                if "Running" in metrics['moca_serv']:
+                    moca_cell.font = green_font
+                elif "Stopped" in metrics['moca_serv']:
+                    moca_cell.font = red_font
+                moca_cell.alignment = top_center
+                refs_cell = ws_windows.cell(row=row_num, column=18, value=metrics['refs_serv'] if metrics['status'] == 'Online' else "N/A")
+                if "Running" in metrics['refs_serv']:
+                    refs_cell.font = green_font
+                elif "Stopped" in metrics['refs_serv']:
+                    refs_cell.font = red_font
+                refs_cell.alignment = top_center
+                blueyonder_cell = ws_windows.cell(row=row_num, column=19, value=metrics['blueyonder_serv'] if metrics['status'] == 'Online' else "N/A")
+                if "Running" in metrics['blueyonder_serv']:
+                    blueyonder_cell.font = green_font
+                elif "Stopped" in metrics['blueyonder_serv']:
+                    blueyonder_cell.font = red_font
+                blueyonder_cell.alignment = top_center
+            
+            # ========== Linux Sheet ==========
+            ws_linux = wb.create_sheet("Linux Servers")
+            
+            # Linux headers
+            linux_headers = [
+                'Server', 'Status', 'Type', 'Ping', 'SSH', 
+                'CPU Usage (%)', 'RAM Usage (%)',
+                'RAM Total (GB)', 'RAM Used (GB)', 'Swap Usage (%)', 'FS Usage (>90%)', 'ClusterIP Ping',
+                'Uptime', 'DB Status', 'Listener Status', 'Archive Logs',
+                'Daily Backup', 'Weekly Backup', 'Checkdown Status'
+            ]
+            
+            # Write Linux headers
+            for col_num, header in enumerate(linux_headers, 1):
+                cell = ws_linux.cell(row=1, column=col_num, value=header)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center')
+            
+            # Write Linux data
+            for row_num, (server, metrics) in enumerate(self.linux_details.items(), 2):
+                lin_server = ws_linux.cell(row=row_num, column=1, value=server)
+                lin_server.alignment = top_alignment
+                lin_status = ws_linux.cell(row=row_num, column=2, value=metrics['status'])
+                lin_status.alignment = top_alignment
+                lin_type = ws_linux.cell(row=row_num, column=3, value='Linux')
+                lin_type.alignment = top_alignment
+                
+                # Ping and SSH
+                ping_cell = ws_linux.cell(row=row_num, column=4, value="✔" if metrics['ping'] else "✖")
+                ping_cell.font = Font(color='00AA00' if metrics['ping'] else 'FF0000', bold=True)
+                ping_cell.alignment = top_center
+                
+                ssh_cell = ws_linux.cell(row=row_num, column=5, value="✔" if metrics['rdp/ssh'] else "✖")
+                ssh_cell.font = Font(color='00AA00' if metrics['rdp/ssh'] else 'FF0000', bold=True)
+                ssh_cell.alignment = top_center
+                
+                # CPU Usage
+                cpu_usage = f"{metrics['cpu_usage']} %" if metrics['status'] == 'Online' else "N/A"
+                cpu_cell = ws_linux.cell(row=row_num, column=6, value=cpu_usage)
+                if cpu_usage != "N/A":
+                    if metrics['cpu_usage'] >= 95:
+                        cpu_cell.font = red_font
+                    elif metrics['cpu_usage'] >= 85:
+                        cpu_cell.font = orange_font
+                    else:
+                        cpu_cell.font = green_font
+                cpu_cell.alignment = top_center
+                    
+                # RAM Usage
+                ram_usage = f"{metrics['ram_usage']} %" if metrics['status'] == 'Online' else "N/A"
+                ram_cell = ws_linux.cell(row=row_num, column=7, value=ram_usage)
+                if ram_usage != "N/A":
+                    if metrics['ram_usage'] >= 95:
+                        ram_cell.font = red_font
+                    elif metrics['ram_usage'] >= 85:
+                        ram_cell.font = orange_font
+                    else:
+                        ram_cell.font = green_font
+                ram_cell.alignment = top_center
+                    
+                # Swap Usage
+                swap_usage = f"{metrics['swap_usage']} %" if metrics['status'] == 'Online' else "N/A"
+                swap_cell = ws_linux.cell(row=row_num, column=10, value=swap_usage)
+                if swap_usage != "N/A":
+                    if metrics['swap_usage'] >= 95:
+                        swap_cell.font = red_font
+                    elif metrics['swap_usage'] >= 85:
+                        swap_cell.font = orange_font
+                    else:
+                        swap_cell.font = green_font
+                swap_cell.alignment = top_center
+                    
+                # FS Usage (multi-line)
+                if isinstance(metrics['fs_usage'], dict):
+                    fs_text = "\n".join([f"{fs}: {usage}%" for fs, usage in metrics['fs_usage'].items()])
+                else:
+                    fs_text = str(metrics['fs_usage'])
+                fs_cell = ws_linux.cell(row=row_num, column=11, value=fs_text)
+                fs_cell.alignment = top_alignment
+                    
+                # RAM details
+                ws_linux.cell(row=row_num, column=8, value=f"{metrics['ram_detailed']['total']} GB" if metrics['status'] == 'Online' else "N/A").alignment = top_center
+                ws_linux.cell(row=row_num, column=9, value=f"{metrics['ram_detailed']['used']} GB" if metrics['status'] == 'Online' else "N/A").alignment = top_center
+                
+                
+                # Cluster IP Ping
+                cluster_cell = ws_linux.cell(row=row_num, column=12, value="✔" if metrics['cluster_ping'] else "✖")
+                cluster_cell.font = Font(color='00AA00' if metrics['cluster_ping'] else 'FF0000', bold=True)
+                cluster_cell.alignment = top_center
+                
+                ws_linux.cell(row=row_num, column=13, value=f"{metrics['uptime']} Days" if metrics['status'] == 'Online' else "N/A").alignment = top_center
+                
+                # DB Status (multi-line)
+                if isinstance(metrics['pmon_stat'], list):
+                    db_text = "\n".join(metrics['pmon_stat'])
+                else:
+                    db_text = str(metrics['pmon_stat'])
+                db_cell = ws_linux.cell(row=row_num, column=14, value=db_text)
+                db_cell.alignment = top_center
+                
+                # Listener Status (multi-line)
+                if isinstance(metrics['tns_stat'], list):
+                    listener_text = "\n".join(metrics['tns_stat'])
+                else:
+                    listener_text = str(metrics['tns_stat'])
+                listener_cell = ws_linux.cell(row=row_num, column=15, value=listener_text)
+                listener_cell.alignment = top_center
+                
+                # Archive Logs (multi-line)
+                if isinstance(metrics['archive_log'], list):
+                    archive_text = "\n".join(metrics['archive_log'])
+                else:
+                    archive_text = str(metrics['archive_log'])
+                archive_cell = ws_linux.cell(row=row_num, column=16, value=archive_text)
+                archive_cell.alignment = top_center
+                
+                # Daily Backup (multi-line)
+                if isinstance(metrics['daily_backup'], list):
+                    daily_text = "\n".join(metrics['daily_backup'])
+                else:
+                    daily_text = str(metrics['daily_backup'])
+                daily_cell = ws_linux.cell(row=row_num, column=17, value=daily_text)
+                daily_cell.alignment = top_center
+                
+                # Weekly Backup (multi-line)
+                if isinstance(metrics['weekly_backup'], list):
+                    weekly_text = "\n".join(metrics['weekly_backup'])
+                else:
+                    weekly_text = str(metrics['weekly_backup'])
+                weekly_cell = ws_linux.cell(row=row_num, column=18, value=weekly_text)
+                weekly_cell.alignment = top_center
+                
+                # Checkdown Status (multi-line)
+                if isinstance(metrics['checkdown'], list):
+                    checkdown_text = "\n".join(metrics['checkdown'])
+                else:
+                    checkdown_text = str(metrics['checkdown'])
+                checkdown_cell = ws_linux.cell(row=row_num, column=19, value=checkdown_text)
+                checkdown_cell.alignment = top_alignment
+            
+            # Auto-adjust column widths for both sheets
+            for ws in [ws_windows, ws_linux]:
+                for column in ws.columns:
+                    max_length = 0
+                    column_letter = get_column_letter(column[0].column)
+                    
+                    # Find the max length in the column
+                    for cell in column:
+                        try:
+                            if cell.value:
+                                # For multi-line cells, check each line
+                                lines = str(cell.value).split('\n')
+                                for line in lines:
+                                    if len(line) > max_length:
+                                        max_length = len(line)
+                        except:
+                            pass
+                    
+                    # Set column width with some padding
+                    adjusted_width = (max_length + 2) * 1.2
+                    ws.column_dimensions[column_letter].width = adjusted_width
+            
+            # Save the workbook
+            wb.save(file_path)
             
             # Show success message
             ttkb.dialogs.Messagebox.show_info(
@@ -447,7 +831,10 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             widget.destroy()
         
         # Create Treeview
-        self.create_canvas_table()
+        self.create_canvas_table_windows()
+        self.create_canvas_table_linux()
+        self.create_canvas_table_db()
+        self.create_canvas_table_db_cd()
         # Create plots
         self.create_plots()
         # Update plots with actual data
@@ -524,7 +911,7 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         
         # C: Drive frame - only create if we have Windows servers
         if self.windows_details:
-            c_drive_frame = ttkb.LabelFrame(parent_frame, text="C: Drive (Windows) / Root Partition (Linux)", bootstyle="info")
+            c_drive_frame = ttkb.LabelFrame(parent_frame, text="C: Drive (Windows)", bootstyle="info")
             c_drive_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 2))
             self.create_meter_rows(c_drive_frame, "C")
         
@@ -547,9 +934,9 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                 usages.append(metrics['C_drive'])
             
             # Add Linux servers
-            for server, metrics in self.linux_details.items():
-                servers.append(f"{server} (/root)")
-                usages.append(metrics['C_drive'])
+            #for server, metrics in self.linux_details.items():
+            #    servers.append(f"{server} (/root)")
+            #    usages.append(metrics['C_drive'])
         elif drive_type == "D":
             # Only Windows servers have D drive
             for server, metrics in self.windows_details.items():
@@ -606,22 +993,30 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         else:
             return "success"
     
-    def create_canvas_table(self):
+    def create_canvas_table_windows(self):
         """Create a canvas-based table to display server metrics"""
         # Create container frame
         container_frame = ttkb.Frame(self.content_frame)
         container_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
+        win_header = ttkb.Label(
+            container_frame,
+            text="Windows / JDA Application Servers Status",
+            font=("Calibri", 12, "bold"),
+            bootstyle=INFO
+        )
+        win_header.pack(expand=True)
+        
         # Create scrollable canvas
-        self.table_canvas = Canvas(container_frame, bg="white", highlightthickness=0)
-        self.table_canvas.pack(fill="both", expand=True)
+        self.table_canvas_windows = Canvas(container_frame, bg="white", highlightthickness=0)
+        self.table_canvas_windows.pack(fill="both", expand=True)
         
         # Initialize font
         self.table_font = tkfont.Font(family="Calibri", size=10)
         
-        self.table_canvas.bind("<Configure>", lambda e: self.draw_table())
+        self.table_canvas_windows.bind("<Configure>", lambda e: self.draw_table_windows())
             
-    def get_column_widths(self, headers, data, available_width):
+    def get_column_widths_windows(self, headers, data, available_width):
         """Calculate column widths based on content"""
         max_text_widths = []
         for col_index in range(len(headers)):
@@ -661,23 +1056,23 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             else:
                 return "#2e7d32"
     
-    def draw_table(self):
+    def draw_table_windows(self):
         """Draw the table with server metrics"""
-        if not self.windows_details and not self.linux_details:
+        if not self.windows_details:
             return
             
         # Prepare headers and data
         headers = [
-            "Server", "Status", "Type", "Ping", "RDP/SSH", 
-            "CPU Usage", "RAM Usage", "C Drive", "D Drive", "Uptime"
+            "Server", "Type", "Ping", "RDP", 
+            "CPU Usage", "RAM Usage", "C Drive", "D Drive", "Uptime", "MOCA Service", "REFS Service", "BlueYonder Service"
         ]
         
         # Combine Windows and Linux data
         data = []
-        for server, metrics in {**self.windows_details, **self.linux_details}.items():
+        for server, metrics in self.windows_details.items():
             row = [
                 server,
-                metrics['status'],
+                #metrics['status'],
                 self.server_credentials[server]['type'],
                 "✔" if metrics['ping'] else "✖",
                 "✔" if metrics['rdp/ssh'] else "✖",
@@ -685,36 +1080,39 @@ class SystemHealthCheckDashboard(ttkb.Frame):
                 f"{metrics['ram_usage']}%" if metrics['status'] == 'Online' else "N/A",
                 f"{metrics['C_drive']}%" if metrics['status'] == 'Online' else "N/A",
                 f"{metrics['D_drive']}%" if metrics['status'] == 'Online' and 'D_drive' in metrics else "N/A",
-                f"{metrics['uptime']} days" if metrics['status'] == 'Online' else "N/A"
+                f"{metrics['uptime']}" if metrics['status'] == 'Online' else "N/A",
+                metrics['moca_serv'] if metrics['status'] == 'Online' else "N/A",
+                metrics['refs_serv'] if metrics['status'] == 'Online' else "N/A",
+                metrics['blueyonder_serv'] if metrics['status'] == 'Online' else "N/A"
             ]
             data.append(row)
         
         # Clear existing items
-        self.table_canvas.delete("all")
+        self.table_canvas_windows.delete("all")
         
         # Get current canvas width
-        canvas_width = self.table_canvas.winfo_width()
+        canvas_width = self.table_canvas_windows.winfo_width()
         if canvas_width < 100:  # Minimum width
             canvas_width = 1000
             
         # Calculate column widths
-        col_widths = self.get_column_widths(headers, data, canvas_width)
+        col_widths = self.get_column_widths_windows(headers, data, canvas_width)
         
         # Calculate total height needed
-        total_height = ((len(data) + 1) * self.cell_height) + 5
+        total_height = ((len(data) + 1) * self.cell_height) + 1
         
         # Configure canvas scroll region
-        self.table_canvas.config(height=total_height)
+        self.table_canvas_windows.config(height=total_height)
         
         # Draw headers
         x = 0
         for i, header in enumerate(headers):
-            w = col_widths[i]
-            self.table_canvas.create_rectangle(
+            w = col_widths[i] - 1 if i == len(headers)-1 else col_widths[i]
+            self.table_canvas_windows.create_rectangle(
                 x, 0, x + w, self.cell_height, 
                 fill=self.header_bg, outline="gray"
             )
-            self.table_canvas.create_text(
+            self.table_canvas_windows.create_text(
                 x + w // 2, self.cell_height // 2, 
                 text=header, fill=self.header_fg, 
                 font=("Calibri", 10, "bold")
@@ -729,30 +1127,586 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             x = 0
             
             for c, cell in enumerate(row):
-                w = col_widths[c]
-                self.table_canvas.create_rectangle(
+                w = col_widths[c] - 1 if c == len(row) - 1 else col_widths[c]
+                self.table_canvas_windows.create_rectangle(
                     x, y0, x + w, y1, 
                     fill=bg_color, outline="gray"
                 )
                 
                 # Determine text color based on metric
-                if c >= 5 and c <= 8 and "%" in str(cell):  # Metric columns
+                if c >= 4 and c <= 7 and "%" in str(cell):  # Metric columns
                     try:
                         value = float(str(cell).replace("%", ""))
                         color = self.get_metric_color(value)
                     except ValueError:
                         color = "black"
-                elif c == 3 or c == 4:  # Ping/RDP columns
+                elif c == 2 or c == 3:  # Ping/RDP columns
                     color = "#4caf50" if cell == "✔" else "#f44336"
+                elif c >= 9 or c <= 11:
+                    if "Running" in cell:
+                        color = "#4caf50"
+                    elif "Stopped" in cell:
+                        color = "#f44336"
+                    else:
+                        color = 'black'
                 else:
                     color = "black"
                 
-                self.table_canvas.create_text(
+                self.table_canvas_windows.create_text(
                     x + w // 2, (y0 + y1) // 2, 
                     text=cell, fill=color, 
                     font=("Calibri", 10)
                 )
                 x += w
+                
+    def create_canvas_table_linux(self):
+        """Create a canvas-based table to display server metrics"""
+        # Create container frame
+        container_frame = ttkb.Frame(self.content_frame)
+        container_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        lin_header = ttkb.Label(
+            container_frame,
+            text="Linux Database Servers Status",
+            font=("Calibri", 12, "bold"),
+            bootstyle=INFO
+        )
+        lin_header.pack(expand=True)
+        
+        # Create scrollable canvas
+        self.table_canvas_linux = Canvas(container_frame, bg="white", highlightthickness=0)
+        self.table_canvas_linux.pack(fill="both", expand=True)
+        
+        # Initialize font
+        self.table_font = tkfont.Font(family="Calibri", size=10)
+        
+        self.table_canvas_linux.bind("<Configure>", lambda e: self.draw_table_linux())
+            
+    def get_column_widths_linux(self, headers, data, available_width):
+        """Calculate column widths based on content"""
+        max_text_widths = []
+        for col_index in range(len(headers)):
+            column_texts = [headers[col_index]] + [str(row[col_index]) for row in data]
+            max_width = 0
+            for text in column_texts:
+                lines = text.split('\n') if isinstance(text, str) else [str(text)]
+                line_widths = [self.table_font.measure(line) for line in lines]
+                max_width = max(max_width, max(line_widths))
+            
+            max_text_widths.append(max_width + self.padding)
+
+        total_content_width = sum(max_text_widths)
+        
+        if total_content_width < available_width:
+            # Distribute extra width proportionally
+            extra = available_width - total_content_width
+            max_text_widths = [w + (extra * w / total_content_width) for w in max_text_widths]
+            
+        return max_text_widths
+    
+    def draw_table_linux(self):
+        """Draw the table with server metrics"""
+        if not self.linux_details:
+            return
+            
+        # Prepare headers and data
+        headers = [
+            "Server", "Type", "Ping", "SSH", 
+            "CPU Usage", "RAM Usage", "Swap Usage", "FS Usage (>90%)", "ClusterIP Ping", "Uptime"
+        ]
+        
+        # Combine Windows and Linux data
+        data = []
+        for server, metrics in self.linux_details.items():
+            # FS Usage
+            if metrics['status'] == 'Online' and isinstance(metrics['fs_usage'], dict):
+                fs_entries = [f"{fs}: {usage}%" for fs, usage in metrics['fs_usage'].items()]
+                fs_usage_text = "\n".join(fs_entries) if fs_entries else "None"
+            elif metrics['fs_usage'] == "None":
+                fs_usage_text = "None"
+            else:
+                fs_usage_text = "N/A"
+            
+            # DB Instance Status
+            if metrics['status'] == 'Online' and isinstance(metrics['pmon_stat'], list):
+                pmon_stat = "\n".join(metrics['pmon_stat'])
+            elif isinstance(metrics['pmon_stat'], str):
+                pmon_stat = metrics['pmon_stat']
+            else:
+                pmon_stat = "N/A"
+            
+            # DB Listner Status
+            if metrics['status'] == 'Online' and isinstance(metrics['tns_stat'], list):
+                tns_stat = "\n".join(metrics['tns_stat'])
+            elif isinstance(metrics['tns_stat'], str):
+                tns_stat = metrics['tns_stat']
+            else:
+                tns_stat = "N/A"
+            
+            # Daily Backup Status
+            if metrics['status'] == 'Online' and isinstance(metrics['daily_backup'], list):
+                daily_backup = "\n".join(metrics['daily_backup'])
+            elif isinstance(metrics['daily_backup'], str):
+                daily_backup = metrics['daily_backup']
+            else:
+                daily_backup = "N/A"
+                
+            # Weekly Backup Status    
+            if metrics['status'] == 'Online' and isinstance(metrics['weekly_backup'], list):
+                weekly_backup = "\n".join(metrics['weekly_backup'])
+            elif isinstance(metrics['weekly_backup'], str):
+                weekly_backup = metrics['weekly_backup']
+            else:
+                weekly_backup = "N/A"
+                
+                
+            row = [
+                server,
+                #metrics['status'],
+                self.server_credentials[server]['type'],
+                "✔" if metrics['ping'] else "✖",
+                "✔" if metrics['rdp/ssh'] else "✖",
+                f"{metrics['cpu_usage']}%" if metrics['status'] == 'Online' else "N/A",
+                f"{metrics['ram_usage']}%" if metrics['status'] == 'Online' else "N/A",
+                f"{metrics['swap_usage']}%" if metrics['status'] == 'Online' else "N/A",
+                #f"{metrics['faulted_resources']}" if metrics['status'] == 'Online' else "N/A",
+                fs_usage_text,
+                "✔" if metrics['cluster_ping'] else "✖",
+                f"{metrics['uptime']} Days" if metrics['status'] == 'Online' else "N/A"
+            ]
+            data.append(row)
+        
+        # Clear existing items
+        self.table_canvas_linux.delete("all")
+        
+        # Get current canvas width
+        canvas_width = self.table_canvas_linux.winfo_width()
+        if canvas_width < 100:  # Minimum width
+            canvas_width = 1000
+            
+        # Calculate column widths
+        col_widths = self.get_column_widths_linux(headers, data, canvas_width)
+        
+        row_heights = []
+        for row in data:
+            max_lines = 1
+            for c, cell in enumerate(row):
+                if isinstance(cell, str) and "\n" in cell:
+                    line_count = cell.count("\n") + 1
+                    if line_count > max_lines:
+                        max_lines = line_count
+            row_heights.append(self.cell_height * max_lines)
+            
+        # Calculate total height needed
+        total_height = sum(row_heights) + self.cell_height + 1
+        
+        # Configure canvas scroll region
+        self.table_canvas_linux.config(height=total_height)
+        
+        # Draw headers
+        x = 0
+        for i, header in enumerate(headers):
+            w = col_widths[i] - 1 if i == len(headers)-1 else col_widths[i]
+            self.table_canvas_linux.create_rectangle(
+                x, 0, x + w, self.cell_height, 
+                fill=self.header_bg, outline="gray"
+            )
+            self.table_canvas_linux.create_text(
+                x + w // 2, self.cell_height // 2, 
+                text=header, fill=self.header_fg, 
+                font=("Calibri", 10, "bold")
+            )
+            x += w
+        
+        # Draw rows
+        y = self.cell_height
+        for r, row in enumerate(data):
+            row_height = row_heights[r]
+            bg_color = self.alt_bg if r % 2 == 0 else "white"
+            x = 0
+            
+            for c, cell in enumerate(row):
+                w = col_widths[c] - 1 if c == len(row)-1 else col_widths[c]
+                self.table_canvas_linux.create_rectangle(
+                    x, y, x + w, y + row_height, 
+                    fill=bg_color, outline="gray"
+                )
+                
+                # Determine text color based on metric
+                if c >= 4 and c <= 6 and "%" in str(cell):  # Metric columns
+                    try:
+                        value = float(str(cell).replace("%", ""))
+                        color = self.get_metric_color(value)
+                    except ValueError:
+                        color = "black"
+                elif c == 2 or c == 3 or c == 8:  # Ping/RDP columns
+                    color = "#4caf50" if cell == "✔" else "#f44336" 
+                else:
+                    color = "black"
+                
+                # Draw multi-line text if needed
+                if isinstance(cell , str) and "\n" in cell:
+                    lines = cell.split("\n")
+                    line_spacing = self.table_font.metrics("linespace") + 2
+                    text_block_height = len(lines) * line_spacing
+                    y_offset = y + (row_height - text_block_height) / 2
+                    for i, line in enumerate(lines):
+                        self.table_canvas_linux.create_text(
+                            x + w // 2, y_offset,
+                            anchor="n", text=line,
+                            fill=color, font=("Calibri", 10)
+                        )
+                        y_offset += line_spacing
+                else:
+                    #Single line
+                    self.table_canvas_linux.create_text(
+                        x + w // 2, y + row_height // 2, 
+                        text=cell, fill=color, 
+                        font=("Calibri", 10)
+                    )
+                x += w
+            y += row_height
+            
+    def create_canvas_table_db(self):
+        """Create a canvas-based table to display server metrics"""
+        # Create container frame
+        container_frame = ttkb.Frame(self.content_frame)
+        container_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Create scrollable canvas
+        self.table_canvas_db = Canvas(container_frame, bg="white", highlightthickness=0)
+        self.table_canvas_db.pack(fill="both", expand=True)
+        
+        # Initialize font
+        self.table_font = tkfont.Font(family="Calibri", size=10)
+        
+        self.table_canvas_db.bind("<Configure>", lambda e: self.draw_table_db())
+            
+    def get_column_widths_db(self, headers, data, available_width):
+        """Calculate column widths based on content"""
+        max_text_widths = []
+        for col_index in range(len(headers)):
+            column_texts = [headers[col_index]] + [str(row[col_index]) for row in data]
+            max_width = 0
+            for text in column_texts:
+                lines = text.split('\n') if isinstance(text, str) else [str(text)]
+                line_widths = [self.table_font.measure(line) for line in lines]
+                max_width = max(max_width, max(line_widths))
+            
+            max_text_widths.append(max_width + self.padding)
+
+        total_content_width = sum(max_text_widths)
+        
+        if total_content_width < available_width:
+            # Distribute extra width proportionally
+            extra = available_width - total_content_width
+            max_text_widths = [w + (extra * w / total_content_width) for w in max_text_widths]
+            
+        return max_text_widths
+    
+    def draw_table_db(self):
+        """Draw the table with server metrics"""
+        if not self.linux_details:
+            return
+            
+        # Prepare headers and data
+        headers = [
+            "Server", "DB Status", "Listerner Status", "Archive Logs", "Daily Backup", "Weekly Backup"
+        ]
+        
+        # Combine Windows and Linux data
+        data = []
+        for server, metrics in self.linux_details.items():
+            # FS Usage
+            if metrics['status'] == 'Online' and isinstance(metrics['fs_usage'], dict):
+                fs_entries = [f"{fs}: {usage}%" for fs, usage in metrics['fs_usage'].items()]
+                fs_usage_text = "\n".join(fs_entries) if fs_entries else "None"
+            elif metrics['fs_usage'] == "None":
+                fs_usage_text = "None"
+            else:
+                fs_usage_text = "N/A"
+            
+            # DB Instance Status
+            if metrics['status'] == 'Online' and isinstance(metrics['pmon_stat'], list):
+                pmon_stat = "\n".join(metrics['pmon_stat'])
+            elif isinstance(metrics['pmon_stat'], str):
+                pmon_stat = metrics['pmon_stat']
+            else:
+                pmon_stat = "N/A"
+            
+            # DB Listner Status
+            if metrics['status'] == 'Online' and isinstance(metrics['tns_stat'], list):
+                tns_stat = "\n".join(metrics['tns_stat'])
+            elif isinstance(metrics['tns_stat'], str):
+                tns_stat = metrics['tns_stat']
+            else:
+                tns_stat = "N/A"
+                
+            # Archive Logs Status
+            if metrics['status'] == 'Online' and isinstance(metrics['archive_log'], list):
+                archive_log = "\n".join(metrics['archive_log'])
+            elif isinstance(metrics['archive_log'], str):
+                archive_log = metrics['archive_log']
+            else:
+                archive_log = "N/A"
+            
+            # Daily Backup Status
+            if metrics['status'] == 'Online' and isinstance(metrics['daily_backup'], list):
+                daily_backup = "\n".join(metrics['daily_backup'])
+            elif isinstance(metrics['daily_backup'], str):
+                daily_backup = metrics['daily_backup']
+            else:
+                daily_backup = "N/A"
+                
+            # Weekly Backup Status    
+            if metrics['status'] == 'Online' and isinstance(metrics['weekly_backup'], list):
+                weekly_backup = "\n".join(metrics['weekly_backup'])
+            elif isinstance(metrics['weekly_backup'], str):
+                weekly_backup = metrics['weekly_backup']
+            else:
+                weekly_backup = "N/A"
+                
+                
+            row = [
+                server,
+                #metrics['status'],
+                #self.server_credentials[server]['type'],
+                pmon_stat,
+                tns_stat,
+                archive_log,
+                daily_backup,
+                weekly_backup
+            ]
+            data.append(row)
+        
+        # Clear existing items
+        self.table_canvas_db.delete("all")
+        
+        # Get current canvas width
+        canvas_width = self.table_canvas_db.winfo_width()
+        if canvas_width < 100:  # Minimum width
+            canvas_width = 1000
+            
+        # Calculate column widths
+        col_widths = self.get_column_widths_db(headers, data, canvas_width)
+        
+        row_heights = []
+        for row in data:
+            max_lines = 1
+            for c, cell in enumerate(row):
+                if isinstance(cell, str) and "\n" in cell:
+                    line_count = cell.count("\n") + 1
+                    if line_count > max_lines:
+                        max_lines = line_count
+            row_heights.append(self.cell_height * max_lines)
+            
+        # Calculate total height needed
+        total_height = sum(row_heights) + self.cell_height + 1
+        
+        # Configure canvas scroll region
+        self.table_canvas_db.config(height=total_height)
+        
+        # Draw headers
+        x = 0
+        for i, header in enumerate(headers):
+            w = col_widths[i] - 1 if i == len(headers)-1 else col_widths[i]
+            self.table_canvas_db.create_rectangle(
+                x, 0, x + w, self.cell_height, 
+                fill=self.header_bg, outline="gray"
+            )
+            self.table_canvas_db.create_text(
+                x + w // 2, self.cell_height // 2, 
+                text=header, fill=self.header_fg, 
+                font=("Calibri", 10, "bold")
+            )
+            x += w
+        
+        # Draw rows
+        y = self.cell_height
+        for r, row in enumerate(data):
+            row_height = row_heights[r]
+            bg_color = self.alt_bg if r % 2 == 0 else "white"
+            x = 0
+            
+            for c, cell in enumerate(row):
+                w = col_widths[c] - 1 if c == len(row)-1 else col_widths[c]
+                self.table_canvas_db.create_rectangle(
+                    x, y, x + w, y + row_height, 
+                    fill=bg_color, outline="gray"
+                )
+                
+                # Determine text color based on metric
+                color = "black"
+                
+                # Draw multi-line text if needed
+                if isinstance(cell , str) and "\n" in cell:
+                    lines = cell.split("\n")
+                    line_spacing = self.table_font.metrics("linespace") + 2
+                    text_block_height = len(lines) * line_spacing
+                    y_offset = y + (row_height - text_block_height) / 2
+                    for i, line in enumerate(lines):
+                        self.table_canvas_db.create_text(
+                            x + w // 2, y_offset,
+                            anchor="n", text=line,
+                            fill=color, font=("Calibri", 10)
+                        )
+                        y_offset += line_spacing
+                else:
+                    #Single line
+                    self.table_canvas_db.create_text(
+                        x + w // 2, y + row_height // 2, 
+                        text=cell, fill=color, 
+                        font=("Calibri", 10)
+                    )
+                x += w
+            y += row_height
+            
+    def create_canvas_table_db_cd(self):
+        """Create a canvas-based table to display server metrics"""
+        # Create container frame
+        container_frame = ttkb.Frame(self.content_frame)
+        container_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Create scrollable canvas
+        self.table_canvas_db_cd = Canvas(container_frame, bg="white", highlightthickness=0)
+        self.table_canvas_db_cd.pack(fill="both", expand=True)
+        
+        # Initialize font
+        self.table_font = tkfont.Font(family="Calibri", size=10)
+        
+        self.table_canvas_db_cd.bind("<Configure>", lambda e: self.draw_table_db_cd())
+            
+    def get_column_widths_db_cd(self, headers, data, available_width):
+        """Calculate column widths based on content"""
+        max_text_widths = []
+        for col_index in range(len(headers)):
+            column_texts = [headers[col_index]] + [str(row[col_index]) for row in data]
+            max_width = 0
+            for text in column_texts:
+                lines = text.split('\n') if isinstance(text, str) else [str(text)]
+                line_widths = [self.table_font.measure(line) for line in lines]
+                max_width = max(max_width, max(line_widths))
+            
+            max_text_widths.append(max_width + self.padding)
+
+        total_content_width = sum(max_text_widths)
+        
+        if total_content_width < available_width:
+            # Distribute extra width proportionally
+            extra = available_width - total_content_width
+            max_text_widths = [w + (extra * w / total_content_width) for w in max_text_widths]
+            
+        return max_text_widths
+    
+    def draw_table_db_cd(self):
+        """Draw the table with server metrics"""
+        if not self.linux_details:
+            return
+            
+        # Prepare headers and data
+        headers = [
+            "Server", "DB Server Checkdown Status"
+        ]
+        
+        # Combine Windows and Linux data
+        data = []
+        for server, metrics in self.linux_details.items():
+           
+            # DB Instance Status
+            if metrics['status'] == 'Online' and isinstance(metrics['checkdown'], list):
+                checkdown = "\n".join(metrics['checkdown'])
+            elif isinstance(metrics['checkdown'], str):
+                checkdown = metrics['checkdown']
+            else:
+                checkdown = "N/A"
+                
+                
+            row = [
+                server,
+                #metrics['status'],
+                #self.server_credentials[server]['type'],
+                checkdown
+            ]
+            data.append(row)
+        
+        # Clear existing items
+        self.table_canvas_db_cd.delete("all")
+        
+        # Get current canvas width
+        canvas_width = self.table_canvas_db_cd.winfo_width()
+        if canvas_width < 100:  # Minimum width
+            canvas_width = 1000
+            
+        # Calculate column widths
+        col_widths = self.get_column_widths_db_cd(headers, data, canvas_width)
+        
+        row_heights = []
+        for row in data:
+            max_lines = 1
+            for c, cell in enumerate(row):
+                if isinstance(cell, str) and "\n" in cell:
+                    line_count = cell.count("\n") + 1
+                    if line_count > max_lines:
+                        max_lines = line_count
+            row_heights.append(self.cell_height * max_lines)
+            
+        # Calculate total height needed
+        total_height = sum(row_heights) + self.cell_height + 1
+        
+        # Configure canvas scroll region
+        self.table_canvas_db_cd.config(height=total_height)
+        
+        # Draw headers
+        x = 0
+        for i, header in enumerate(headers):
+            w = col_widths[i] - 1 if i == len(headers)-1 else col_widths[i]
+            self.table_canvas_db_cd.create_rectangle(
+                x, 0, x + w, self.cell_height, 
+                fill=self.header_bg, outline="gray"
+            )
+            self.table_canvas_db_cd.create_text(
+                x + w // 2, self.cell_height // 2, 
+                text=header, fill=self.header_fg, 
+                font=("Calibri", 10, "bold")
+            )
+            x += w
+        
+        # Draw rows
+        y = self.cell_height
+        for r, row in enumerate(data):
+            row_height = row_heights[r]
+            bg_color = self.alt_bg if r % 2 == 0 else "white"
+            x = 0
+            
+            for c, cell in enumerate(row):
+                w = col_widths[c] - 1 if c == len(row)-1 else col_widths[c]
+                self.table_canvas_db_cd.create_rectangle(
+                    x, y, x + w, y + row_height, 
+                    fill=bg_color, outline="gray"
+                )
+                
+                # Determine text color based on metric
+                color = "black"
+                
+                # Draw multi-line text if needed
+                if isinstance(cell , str) and "\n" in cell:
+                    lines = cell.split("\n")
+                    line_spacing = self.table_font.metrics("linespace") + 2
+                    for i, line in enumerate(lines):
+                        self.table_canvas_db_cd.create_text(
+                            x + 5, y + 5 + i * line_spacing,
+                            anchor="nw", text=line,
+                            fill=color, font=("Calibri", 10)
+                        )
+                else:
+                    #Single line
+                    self.table_canvas_db_cd.create_text(
+                        x + w // 2, y + row_height // 2, 
+                        text=cell, fill=color, 
+                        font=("Calibri", 10)
+                    )
+                x += w
+            y += row_height
 
     def update_plots_with_metrics(self):
         """Update all plots with actual metrics data"""
@@ -783,4 +1737,77 @@ class SystemHealthCheckDashboard(ttkb.Frame):
             self.axes[1].set_ylim(0, max(linux_cpu) + 10)
             self.axes[1].grid(axis='y', linestyle=':', alpha=0.7)
             for i, val in enumerate(linux_cpu):
-                self.axes[1].text(i, val + 2, f"{val}%", ha='
+                self.axes[1].text(i, val + 2, f"{val}%", ha='center')
+                
+        # Update RAM Usage plots
+        if self.windows_details:
+            # Windows RAM Usage
+            windows_servers = list(self.windows_details.keys())
+            windows_ram = [metrics['ram_usage'] for metrics in self.windows_details.values()]
+            ram_colors = self.get_colors(windows_ram)
+            self.axes[2].barh(windows_servers, windows_ram, color=ram_colors, edgecolor='white', linewidth=1)
+            self.axes[2].set_title("Windows RAM Usage (%)", fontweight="bold")
+            self.axes[2].set_xlim(0, 100)
+            self.axes[2].grid(axis='x', linestyle='--', alpha=0.7)
+            for i, val in enumerate(windows_ram):
+                self.axes[2].text(val + 1, i, f"{val}%", va='center')
+        
+        if self.linux_details:
+            # Linux RAM Usage
+            linux_servers = list(self.linux_details.keys())
+            linux_ram = [metrics['ram_usage'] for metrics in self.linux_details.values()]
+            ram_colors = self.get_colors(linux_ram)
+            self.axes[3].barh(linux_servers, linux_ram, color=ram_colors, edgecolor='white', linewidth=1)
+            self.axes[3].set_title("Linux RAM Usage (%)", fontweight="bold")
+            self.axes[3].set_xlim(0, 100)
+            self.axes[3].grid(axis='x', linestyle='--', alpha=0.7)
+            for i, val in enumerate(linux_ram):
+                self.axes[3].text(val + 1, i, f"{val}%", va='center')
+                
+        windows_c_drive = [metrics['C_drive'] for metrics in self.windows_details.values()]
+        windows_d_drive = [metrics['D_drive'] for metrics in self.windows_details.values()]
+        linux_c_drive = [metrics['C_drive'] for metrics in self.linux_details.values()]
+                
+        self.update_disk_meters(windows_servers, windows_c_drive, windows_d_drive, linux_servers, linux_c_drive)
+        
+        # Redraw all canvases
+        for canvas in self.canvases:
+            canvas.draw()
+            
+    def update_disk_meters(self, windows_servers, windows_c_drive, windows_d_drive, linux_servers, linux_c_drive):
+        """Update the disk usage meter widgets with actual data"""
+        # Clear existing meters
+        for meter in self.c_drive_meters:
+            meter.destroy()
+        for meter in self.d_drive_meters:
+            meter.destroy()
+        self.c_drive_meters = []
+        self.d_drive_meters = []
+        
+        '''def print_hei(widget, level=0):
+            print("  " * level + f"{widget.winfo_class()} - {widget}")
+            for child in widget.winfo_children():
+                print_hei(child, level + 1)
+        print_hei(self.content_frame)'''
+        # Recreate the disk usage plots with updated data
+        disk_frame = self.content_frame.winfo_children()[4].winfo_children()[2]
+        
+        self.create_disk_usage_plots(disk_frame)
+        
+    def get_colors(self, values):
+        """Determine bar colors based on percentage"""
+        colors = []
+        for val in values:
+            if val >= 95:
+                colors.append('#f04124')
+            elif val >= 85:
+                colors.append('#e99002')
+            else:
+                colors.append('#43ac6a')
+        return colors
+        
+if __name__ == '__main__':
+    app = ttkb.Window("Health Check Dashboard", "flatly")
+    app.state('zoomed')
+    dashboard = SystemHealthCheckDashboard(app)
+    app.mainloop()
