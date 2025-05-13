@@ -1,42 +1,61 @@
-Executed command
-#!/bin/sh
-#
-#echo "*  waiting 5 seconds *"
-#sleep 5
-h=`ps -ef|egrep 'archcopy|archzip|archxfer'|grep -v grep|wc -l`
-i=`ps -ef|grep ora_|grep -v grep|wc -l`
-j=`ps -ef|grep tnslsnr|grep -v grep|wc -l`
-k=`expr $i + $j`
-if [ $h -eq 0 ]&&[ $k -eq 0 ]
-then
- echo "********************************************"
- echo "*  CHECKDOWN complete. No Oracle running.  *"
- echo "********************************************"
-else
- echo "*****************************************"  > /tmp/checkdown.msg
- echo "*  CHECKDOWN - Current Oracle Status.   *" >> /tmp/checkdown.msg
- echo "*****************************************" >> /tmp/checkdown.msg
- echo "" >> /tmp/checkdown.msg
- echo $k "tasks still active (list follows)" >> /tmp/checkdown.msg
- echo "" >> /tmp/checkdown.msg
- ps -ef|grep ora_pmon|grep -v grep >> /tmp/checkdown.msg
- ps -ef|grep tnslsnr|grep -v grep >> /tmp/checkdown.msg
- echo "" >> /tmp/checkdown.msg
- countpmon=`ps -ef|grep ora_pmon|grep -v grep|wc -l`
- countlsnr=`ps -ef|grep tnslsnr|grep -v grep|wc -l`
- countcopy=`ps -ef|grep archcopy|grep -v grep|wc -l`
- countzip=`ps -ef|grep archzip|grep -v grep|wc -l`
- countxfer=`ps -ef|grep archxfer|grep -v grep|wc -l`
- echo "Number of Oracle instances running   = $countpmon" >> /tmp/checkdown.msg
- echo "Number of Oracle listeners running   = $countlsnr" >> /tmp/checkdown.msg
- echo "Number of archcopy processes running = $countcopy" >> /tmp/checkdown.msg
- echo "Number of archzip  processes running = $countzip"  >> /tmp/checkdown.msg
- echo "Number of archxfer processes running = $countxfer" >> /tmp/checkdown.msg
- echo " " >> /tmp/checkdown.msg
- echo "There should be 1 databases and 1 listeners active." >> /tmp/checkdown.msg
- echo "There should be 1 arch* processes running." >> /tmp/checkdown.msg
- echo "View the /etc/oratab to determine what databases" >> /tmp/checkdown.msg
- echo "or listeners are missing if the above counts are inaccurate." >> /tmp/checkdown.msg
- more /tmp/checkdown.msg
- rm /tmp/checkdown.msg
-fi
+def update_gui_after_metrics(self):
+    self.display_metrics()
+    self.export_btn.config(state="normal")  # Enable export button now that we have data
+    self.update_timestamp()  # Add this line to update the timestamp
+
+self.timestamp_label = None  # To store the timestamp label widget
+
+def update_timestamp(self):
+    # Get current time in UTC
+    utc_now = datetime.now(pytz.utc)
+    
+    # Convert to IST
+    ist = utc_now.astimezone(pytz.timezone('Asia/Kolkata'))
+    ist_str = ist.strftime('%d-%m-%Y %H:%M:%S IST')
+    
+    # Convert to US Central Time (you can change this to any US timezone you prefer)
+    us_central = utc_now.astimezone(pytz.timezone('America/Chicago'))
+    us_str = us_central.strftime('%d-%m-%Y %H:%M:%S CT')
+    
+    timestamp_text = f"Last Updated:\n{ist_str}\n{us_str}"
+    
+    # Create or update the timestamp label
+    if self.timestamp_label is None:
+        self.timestamp_label = ttkb.Label(
+            self.left_pane,  # We'll need to store left_pane as an instance variable
+            text=timestamp_text,
+            font=("Calibri", 10),
+            bootstyle="secondary",
+            justify="center"
+        )
+        self.timestamp_label.pack(fill="x", pady=(20, 0))
+    else:
+        self.timestamp_label.config(text=timestamp_text)
+
+
+def create_left_pane(self):
+    style = ttkb.Style()
+    style.configure('Overview.TButton', font=('Calibri', 14, 'bold'))
+    style.configure('Export.TButton', font=('Calibri', 12, 'bold'))
+    
+    self.left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)  # Store as self.left_pane
+    self.left_pane.grid(row=1, column=0, sticky="ns")
+    self.left_pane.grid_propagate(False)
+
+    self.overview_btn = ttkb.Button(
+        self.left_pane,
+        text="JDA Overview",
+        bootstyle="success",
+        style='Overview.TButton',
+        command=self.start_metrics_collection_thread
+    )
+    self.overview_btn.pack(fill="x", pady=(0, 20))
+    self.export_btn = ttkb.Button(
+        self.left_pane,
+        text="Export Data",
+        bootstyle="info",
+        style='Export.TButton',
+        command=self.export_to_excel,
+        state="disabled"  # Initially disabled
+    )
+    self.export_btn.pack(fill="x", pady=(0, 20))
