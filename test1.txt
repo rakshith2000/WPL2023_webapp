@@ -1,61 +1,43 @@
-def update_gui_after_metrics(self):
-    self.display_metrics()
-    self.export_btn.config(state="normal")  # Enable export button now that we have data
-    self.update_timestamp()  # Add this line to update the timestamp
+class SystemHealthCheckDashboard(ttkb.Frame):
+    def __init__(self, master):
+        super().__init__(master)
+        self.pack(fill="both", expand=True)
+        
+        # Add refresh timer variable
+        self.refresh_timer = None
+        self.refresh_interval = 300000  # 5 minutes in milliseconds
+        
+        # ... rest of existing __init__ code ...
+        
+    def update_gui_after_metrics(self):
+        self.display_metrics()
+        self.export_btn.config(state="normal")
+        self.update_timestamp()
+        
+        # Schedule next refresh
+        if self.refresh_timer:
+            self.after_cancel(self.refresh_timer)
+        self.refresh_timer = self.after(self.refresh_interval, self.start_metrics_collection_thread)
+        
+    def auto_refresh(self):
+        """Start the metrics collection and schedule next refresh"""
+        self.start_metrics_collection_thread()
+        
+    def on_close(self):
+        """Cancel any pending refresh when window is closing"""
+        if self.refresh_timer:
+            self.after_cancel(self.refresh_timer)
+        self.master.destroy()
 
-self.timestamp_label = None  # To store the timestamp label widget
-
-def update_timestamp(self):
-    # Get current time in UTC
-    utc_now = datetime.now(pytz.utc)
+if __name__ == '__main__':
+    app = ttkb.Window("Health Check Dashboard", "flatly")
+    app.state('zoomed')
+    dashboard = SystemHealthCheckDashboard(app)
     
-    # Convert to IST
-    ist = utc_now.astimezone(pytz.timezone('Asia/Kolkata'))
-    ist_str = ist.strftime('%d-%m-%Y %H:%M:%S IST')
+    # Set up close handler
+    app.protocol("WM_DELETE_WINDOW", dashboard.on_close)
     
-    # Convert to US Central Time (you can change this to any US timezone you prefer)
-    us_central = utc_now.astimezone(pytz.timezone('America/Chicago'))
-    us_str = us_central.strftime('%d-%m-%Y %H:%M:%S CT')
+    # Start initial refresh
+    dashboard.auto_refresh()
     
-    timestamp_text = f"Last Updated:\n{ist_str}\n{us_str}"
-    
-    # Create or update the timestamp label
-    if self.timestamp_label is None:
-        self.timestamp_label = ttkb.Label(
-            self.left_pane,  # We'll need to store left_pane as an instance variable
-            text=timestamp_text,
-            font=("Calibri", 10),
-            bootstyle="secondary",
-            justify="center"
-        )
-        self.timestamp_label.pack(fill="x", pady=(20, 0))
-    else:
-        self.timestamp_label.config(text=timestamp_text)
-
-
-def create_left_pane(self):
-    style = ttkb.Style()
-    style.configure('Overview.TButton', font=('Calibri', 14, 'bold'))
-    style.configure('Export.TButton', font=('Calibri', 12, 'bold'))
-    
-    self.left_pane = ttkb.Frame(self, padding=10, bootstyle=LIGHT, width=220)  # Store as self.left_pane
-    self.left_pane.grid(row=1, column=0, sticky="ns")
-    self.left_pane.grid_propagate(False)
-
-    self.overview_btn = ttkb.Button(
-        self.left_pane,
-        text="JDA Overview",
-        bootstyle="success",
-        style='Overview.TButton',
-        command=self.start_metrics_collection_thread
-    )
-    self.overview_btn.pack(fill="x", pady=(0, 20))
-    self.export_btn = ttkb.Button(
-        self.left_pane,
-        text="Export Data",
-        bootstyle="info",
-        style='Export.TButton',
-        command=self.export_to_excel,
-        state="disabled"  # Initially disabled
-    )
-    self.export_btn.pack(fill="x", pady=(0, 20))
+    app.mainloop()
