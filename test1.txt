@@ -1,15 +1,35 @@
 class SystemHealthCheckDashboard(ttkb.Frame):
-    def __init__(self, master):
-        super().__init__(master)
-        self.pack(fill="both", expand=True)
+    # ... existing code ...
+
+    def start_metrics_collection_thread(self):
+        self.export_btn.config(state="disabled")
         
-        # Add refresh timer variable
-        self.refresh_timer = None
-        self.refresh_interval = 300000  # 5 minutes in milliseconds
-        
-        # ... rest of existing __init__ code ...
-        
+        # Only show loading label if it's the first run
+        if not hasattr(self, 'initial_load_complete'):
+            for widget in self.content_frame.winfo_children():
+                widget.destroy()
+            self.loading_label = ttkb.Label(
+                self.content_frame,
+                text="Collecting metrics from servers...",
+                font=("Calibri", 14, "bold"),
+                bootstyle=INFO
+            )
+            self.loading_label.pack(expand=True)
+            self.content_frame.update()
+            
+        """Start a thread to collect metrics."""
+        self.overview_btn.config(state="disabled")
+        threading.Thread(target=self.update_all_metrics).start()
+
     def update_gui_after_metrics(self):
+        # Mark initial load as complete
+        self.initial_load_complete = True
+        
+        # Remove loading label if it exists
+        if hasattr(self, 'loading_label'):
+            self.loading_label.destroy()
+            del self.loading_label
+            
         self.display_metrics()
         self.export_btn.config(state="normal")
         self.update_timestamp()
@@ -18,26 +38,5 @@ class SystemHealthCheckDashboard(ttkb.Frame):
         if self.refresh_timer:
             self.after_cancel(self.refresh_timer)
         self.refresh_timer = self.after(self.refresh_interval, self.start_metrics_collection_thread)
-        
-    def auto_refresh(self):
-        """Start the metrics collection and schedule next refresh"""
-        self.start_metrics_collection_thread()
-        
-    def on_close(self):
-        """Cancel any pending refresh when window is closing"""
-        if self.refresh_timer:
-            self.after_cancel(self.refresh_timer)
-        self.master.destroy()
 
-if __name__ == '__main__':
-    app = ttkb.Window("Health Check Dashboard", "flatly")
-    app.state('zoomed')
-    dashboard = SystemHealthCheckDashboard(app)
-    
-    # Set up close handler
-    app.protocol("WM_DELETE_WINDOW", dashboard.on_close)
-    
-    # Start initial refresh
-    dashboard.auto_refresh()
-    
-    app.mainloop()
+    # ... rest of existing code ...
