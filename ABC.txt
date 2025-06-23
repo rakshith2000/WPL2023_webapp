@@ -1,35 +1,30 @@
 #! bin/bash
 export login_id=`id | awk -F '(' {'print$2'} | awk -F ')' {'print$1'}`
 echo "Logged in as ID :- "$login_id
-
 Add_No_Ext(){
         sqlplus -S /nolog << EOF
         conn / as sysdba
         alter tablespace $1 add datafile '$2' size 10G;
 EOF
 }
-
 Add_Yes_Ext(){
         sqlplus -S /nolog << EOF
         conn / as sysdba
         alter tablespace $1 add datafile '$2' size 5G autoextend on maxsize 10G;
 EOF
 }
-
 Resize_Yes_Ext(){
         sqlplus -S /nolog << EOF
         conn / as sysdba
         alter database datafile '$1' autoextend on maxsize 10G;
 EOF
 }
-
 Resize_No_Ext(){
         sqlplus -S /nolog << EOF
         conn / as sysdba
         alter database datafile '$1' resize 10G;
 EOF
 }
-
 Fetch_Result(){
         sqlplus -S / as sysdba << EOF
         SET TERMOUT OFF
@@ -38,7 +33,6 @@ Fetch_Result(){
         spool off
 EOF
 }
-
 Check_Status(){
         chmod 755 /tmp/second_lf.log
         echo "Table After:"
@@ -68,7 +62,6 @@ Check_Status(){
                 fi
         fi
 }
-
 if [[ "${login_id}" == "oracle" ]] ;then
         db=$1
         ts_name=$2
@@ -82,12 +75,9 @@ if [[ "${login_id}" == "oracle" ]] ;then
         rm /tmp/caclisten.txt
         export ORACLE_HOME=`cat /etc/oratab | grep $ORACLE_SID | awk -F ':' {'print$2'}`
         export PATH=$PATH:$ORACLE_HOME/bin
-        #conditon to validate DEV/PRD
         export ticket_env=`/common/oracle/CAC_DB_Scripts/cac_ora_env.sh $ORACLE_SID | tail -1 | awk '{print $6}'`
         echo "DB Environment: "$ticket_env
-        #export ticket_env="DEV"
         if [ "${ticket_env}" == "DEV" ] || [ "${ticket_env}" == "TST" ] || [ "${ticket_env}" == "TRNT" ]  ;then
-                #Continue as Non PROD
                 echo "SQL Queries Output and Current Table:"
                 sqlplus -S / as sysdba << EOF
                 SET TERMOUT OFF
@@ -100,8 +90,6 @@ EOF
                 check_mode=`cat /tmp/first_lf.log | fgrep db_matched | awk {'print $1$2$3$4$5$6'}`
                 dbom=${check_mode%%db_matched*}
                 if [[ "${dbom}" == "READWRITE" ]] ;then
-                        #Continue as Read Write only
-                        #echo "Table Before:"
                         cat /tmp/first_lf.log | tail -5
                         echo "DB Mode:"$dbom
                         dffs=`cat /tmp/first_lf.log | awk '{print $2}' | cut -d/ -f1-4 | sort | uniq -d | fgrep $ORACLE_SID`
@@ -110,71 +98,65 @@ EOF
                         echo "Space Used (%):"$dffs_size
                         dflnth=`cat /tmp/first_lf.log | grep -i dbf | awk '{print length($2)}' | uniq -d`
                         echo "DF length:"$dflnth
-                        maxdfno=`cat /tmp/first_lf.log | awk '{print $2}' | grep -i dbf | awk '{ print substr($0,length($0)-5,2)}' | sort | tail -1`
-                        #echo "Latest DF number:"$maxdfno
-                        dfae=`cat /tmp/first_lf.log | grep -i dbf | awk '{print $6}' | tail -1`
-                        echo "DF Type Auto-Extensible:"$dfae
-                        echo "Total space and available space on the file system:"
-                        df -h $dffs
-                        if [[ "${dffs_size}" -lt 90 ]] ;then
-                                #Continue as available free space
+                        # Enhancement: Loop through all files to check resize potential
+                        file_resized=false
+                        
+						grep -i dbf /tmp/first_lf.log > /tmp/df_lines.tmp
+						
+						while read -r line; do
+                                df_file=$(echo "$line" | awk '{print $2}')
+                                df_used=$(echo "$line" | awk '{print $3}' | tr -d ',')
+                                df_max=$(echo "$line" | awk '{print $4}' | tr -d ',')
+                                df_autoext=$(echo "$line" | awk '{print $6}')
+                                if [[ "$df_autoext" == "YES" && "$df_max" -lt 10240 ]]; then
+                                        echo "Resizing autoextensible file: $df_file"
+                                        Resize_Yes_Ext "$df_file"
+                                        file_resized=true
+                                        en_action="Resize"
+                                        en_latfile="$df_file"
+                                        en_used="$df_used"
+                                        en_max="$df_max"
+                                        dfae="YES"
+                                        break
+                                elif [[ "$df_autoext" == "NO" && "$df_used" -lt 10240 ]]; then
+                                        echo "Resizing fixed-size file: $df_file"
+                                        Resize_No_Ext "$df_file"
+                                        file_resized=true
+                                        en_action="Resize"
+                                        en_latfile="$df_file"
+                                        en_used="$df_used"
+                                        en_max="$df_max"
+                                        dfae="NO"
+                                        break
+                                fi
+								done < /tmp/df_lines.tmp
+								
+								rm -f /tmp/df_lines.tmp
+								
+						grep -i dbf /tmp/first_lf.log | while read -r line; do
+                        if [[ "$file_resized" != true ]]; then
+                                maxdfno=`cat /tmp/first_lf.log | awk '{print $2}' | grep -i dbf | awk '{ print substr($0,length($0)-5,2)}' | sort | tail -1`
                                 dfnewnum=`expr $maxdfno + 1`
-                                #echo "DF number:"$dfnewnum
-                                if [[ "${dfnewnum}" -le 99 ]] ;then
+                                if [[ "$dfnewnum" -le 99 ]] ;then
                                         dfnewnum=$(printf '%02d' $dfnewnum)
                                 else
                                         dfnewnum=$(printf '%03d' $dfnewnum)
                                 fi
-                                echo "Latest DF number:"$maxdfno "and New DF number:"$dfnewnum
                                 dfname=`cat /tmp/first_lf.log | awk '{print $2}' | grep -i dbf | awk '{ print substr($0,1,length($0)-6)}' | sort | uniq -d`
-                                echo "Existing DF name:"$dfname
                                 dfext=.dbf
-                                #echo "DF extension:"$dfext
                                 dfnewname=$dfname$dfnewnum$dfext
-                                echo "New DF name:"$dfnewname
+                                echo "Adding new datafile: $dfnewname"
+                                Add_Yes_Ext $ts_name $dfnewname
+                                en_action="Add"
                                 en_latfile=`cat /tmp/first_lf.log | grep -i dbf | awk '{print $2}' | tail -1`
-                                en_used=`cat /tmp/first_lf.log | grep -i dbf | awk '{print $3}' | tail -1`
-                                en_used=`echo "${en_used//,}"`
-                                en_max=`cat /tmp/first_lf.log | grep -i dbf | awk '{print $4}' | tail -1`
-                                en_max=`echo "${en_max//,}"`
-                                echo "Latest file name:"$en_latfile "; used:"$en_used "; max:"$en_max
-                                #dfae="YES"
-                                #-------------------------Enhancement code------------------------------------------
-                                #if max < 10GB for auto ext resize - only max to 10GB
-
-                                if [[ "${dfae}" == "YES" ]] ;then
-                                        #if [ "${en_used}" -le 10240 ] && [ "${en_max}" -le 10240 ]  ;then
-                                        if [[ "${en_max}" -lt 10240 ]] ;then
-                                                en_action="Resize"
-                                                echo "Action: Resizing datafile for auto ext YES"
-                                                Resize_Yes_Ext $en_latfile
-                                        else
-                                                en_action="Add"
-                                                echo "Action: Adding datafile for auto ext YES"
-                                                Add_Yes_Ext $ts_name $dfnewname
-                                        fi
-                                elif [[ "${dfae}" == "NO" ]] ;then
-                                        #en_used=11000
-                                        if [[ "${en_used}" -lt 10240 ]] ;then
-                                                en_action="Resize"
-                                                echo "Action: Resizing datafile for auto ext NO"
-                                                Resize_No_Ext $en_latfile
-                                        else
-                                                en_action="Add"
-                                                echo "Action: Adding datafile for auto ext NO"
-                                                Add_No_Ext $ts_name $dfnewname
-                                        fi
-                                else
-                                    echo "[ATM_Status]Error_4: Data file Auto-Extensible Type is not YES or NO"
-                                    exit
-                                fi
-                                en_stat=`cat /tmp/first_lf.log | grep -i dbf |  tail -1 | awk '{print $3}'`
-                                Fetch_Result $ts_name
-                                Check_Status $dfnewname $en_latfile $en_action $en_stat $dfae
-                        else
-                                echo "[ATM_Status]Error_3: DB has no free space"
-                                exit
+                                en_used=`cat /tmp/first_lf.log | grep -i dbf | awk '{print $3}' | tail -1 | tr -d ','`
+                                dfae="YES"
+                                dfnewname=$dfnewname
                         fi
+						done
+                        en_stat=$en_used
+                        Fetch_Result $ts_name
+                        Check_Status $dfnewname $en_latfile $en_action $en_stat $dfae
                 else
                         echo "[ATM_Status]Error_2: DB Mode is Not READ WRITE"
                         exit
