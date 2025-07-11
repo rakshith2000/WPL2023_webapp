@@ -1,7 +1,7 @@
 #! bin/bash
 export login_id=`id | awk -F '(' {'print$2'} | awk -F ')' {'print$1'}`
 echo "Logged in as ID :- "$login_id
-export ORACLE_HOME=$(cat /etc/oratab 2>/dev/null  |  grep $ORACLE_SID  |  awk -F ':' '{print $2}')
+export ORACLE_HOME=$(cat /etc/oratab 2>/dev/null  |  grep "$ORACLE_SID"  |  awk -F ':' '{print $2}')
 export PATH=$ORACLE_HOME/bin:$PATH
 Add_No_Ext(){
         sqlplus -S /nolog << EOF
@@ -44,7 +44,7 @@ EOF
 }
 Check_Status(){
         chmod 755 /tmp/second_lf.log
-        if [[ $3 == "Add" ]] ;then
+        if [[ "$3" == "Add" ]] ;then
 check_status=`cat /tmp/second_lf.log 2>/dev/null  |  grep -i dbf  |   tail -1  |  awk '{print $1}'`
                 if [[ "${check_status}" == $1 ]] ;then
                         echo "[ATM_Status]Success: Datafile added Successfully"
@@ -82,10 +82,17 @@ ps -ef 2>/dev/null  |  grep lsnr  |  grep -i $ORACLE_SID  >> /tmp/caclisten.txt
         rm /tmp/caclisten.txt
 export ORACLE_HOME=`cat /etc/oratab 2>/dev/null  |  grep $ORACLE_SID  |  awk -F ':' {'print$2'}`
         export PATH=$PATH:$ORACLE_HOME/bin
+        #export ticket_env=`/common/oracle/CAC_DB_Scripts/cac_ora_env.sh $ORACLE_SID | tail -1 | awk '{print $6}'`
+        #echo "DB Environment: "$ticket_env
         #if [ "${ticket_env}" == "DEV" ] || [ "${ticket_env}" == "TST" ] || [ "${ticket_env}" == "TRNT" ]  ;then
                 #echo "SQL Queries Output and Current Table:"'
                 sqlplus -S / as sysdba << EOF
-                SET TERMOUT OFF
+                SET TERMOUT ON
+                SET HEADING ON
+                SET VERIFY OFF
+                SET LINESIZE 200
+                SET PAGESIZE 100
+
                 spool /tmp/first_lf.log
                 select open_mode, case when name='$ORACLE_SID' then 'db_matched' else 'db_not_matched' end as db_status from v\$database;
  @/common/oracle/show_df_size.sql $ts_name
@@ -95,7 +102,7 @@ EOF
 check_mode=`cat /tmp/first_lf.log 2>/dev/null  |  fgrep db_matched  |  awk {'print $1$2$3$4$5$6'}`
                 dbom=${check_mode%%db_matched*}
                 if [[ "${dbom}" == "READWRITE" ]] ;then
-                        cat /tmp/first_lf.log | tail -5
+                        #cat /tmp/first_lf.log | tail -5
                         echo "DB Mode:"$dbom
 dffs=`cat /tmp/first_lf.log 2>/dev/null  |  awk '{print $2}'  |  cut -d/ -f1-4  |  sort  |  uniq -d  |  fgrep $ORACLE_SID`
                         echo "Data File System:"$dffs
@@ -152,7 +159,7 @@ maxdfno=$(cat /tmp/first_lf.log 2>/dev/null  |  grep -i dbf  |  awk '{print $2}'
 last_autoext=$(cat /tmp/first_lf.log 2>/dev/null  |  grep -i dbf  |  tail -1  |  awk '{print $6}')
 file_exists=$(sqlplus -S /nolog <<EOF
 conn / as sysdba
-set heading off feedback off pagesize 0 verify off echo off
+#set heading off feedback off pagesize 0 verify off echo off
 SELECT COUNT(*) FROM dba_data_files WHERE file_name = '$dfnewname';
                                                                   exit
 EOF
@@ -181,6 +188,10 @@ done
                         echo "[ATM_Status]Error_2: DB Mode is Not READ WRITE"
                         exit
                 fi
+        #else
+                #echo "[ATM_Status]Error_1: The Environment value returned is Not DEV"
+                #exit
+        #fi
 else
         echo "[ATM_Status]Error_0: Unable to log in as oracle user."
                                                                             exit
