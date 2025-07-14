@@ -1,5 +1,151 @@
-grep -i dbf /tmp/first_lf.log 2>/dev/null > /tmp/df_lines_2.tmp 2>/dev/null
-while read -r line; do
+#! bin/bash
+export login_id=`id | awk -F '(' {'print$2'} | awk -F ')' {'print$1'}`
+echo "Logged in as ID :- "$login_id
+export ORACLE_HOME=$(cat /etc/oratab 2>/dev/null  |  grep "$ORACLE_SID"  |  awk -F ':' '{print $2}')
+export PATH=$ORACLE_HOME/bin:$PATH
+Add_No_Ext(){
+        sqlplus -S /nolog << EOF
+        conn / as sysdba
+        alter tablespace $1 add datafile '$2' size 5G;
+EOF
+}
+Add_Yes_Ext(){
+        sqlplus -S /nolog << EOF
+        conn / as sysdba
+        alter tablespace $1 add datafile '$2' size 5G autoextend on maxsize 5G;
+
+EOF
+}
+Resize_Yes_Ext(){
+        sqlplus -S /nolog << EOF
+        conn / as sysdba
+alter database datafile '$1' autoextend on maxsize ${2}M;
+EOF
+}
+Resize_No_Ext(){
+        sqlplus -S /nolog << EOF
+        conn / as sysdba
+alter database datafile '$1' resize ${2}M;
+EOF
+}
+Fetch_Result(){
+        echo "Table After:"
+        sqlplus -S / as sysdba << EOF
+        SET TERMOUT ON
+SET VERIFY OFF
+        SET HEADING ON
+SET VERIFY OFF
+        spool /tmp/second_lf.log
+        @/common/oracle/show_df_size.sql $1
+        spool off
+EOF
+}
+Check_Status(){
+        chmod 755 /tmp/second_lf.log
+        if [[ "$3" == "Add" ]] ;then
+check_status=`cat /tmp/second_lf.log 2>/dev/null  |  grep -i dbf  |   tail -1  |  awk '{print $2}'`
+                if [[ "${check_status}" == $1 ]] ;then
+                        echo "[ATM_Status]Success: Datafile added Successfully"
+ else
+                        echo "[ATM_Status]Failed: Datafile not added"
+                fi
+        else
+                if [[ $5 == "YES" ]] ;then
+check_status=`cat /tmp/second_lf.log 2>/dev/null  |  grep -i dbf  |   tail -1  |  awk '{print $4}'`
+                        if [[ "${check_status}" == "10,240" ]] ;then
+                                echo "[ATM_Status]Success1: Datafile resized Successfully"
+                        else
+                                echo "[ATM_Status]Failed1: Datafile not resized"
+                        fi
+                else
+check_status=`cat /tmp/second_lf.log 2>/dev/null  |  grep -i dbf  |   tail -1  |  awk '{print $3}'`
+                        if [[ "${check_status}" == $4 ]] ;then
+                                echo "[ATM_Status]Failed1: Datafile not resized"
+                        else
+                                echo "[ATM_Status]Success1: Datafile resized Successfully"
+                        fi
+                fi
+        fi
+}
+if [[ "${login_id}" == "oracle" ]] ;then
+                                                            db=$1
+        ts_name=$2
+        export ORACLE_SID=$db
+        echo "ORACLE_SID:"$ORACLE_SID "and Table space name:"$ts_name
+        touch /tmp/caclisten.txt
+ps -ef 2>/dev/null  |  grep pmon_$ORACLE_SID  |  head -1 > /tmp/caclisten.txt
+ps -ef 2>/dev/null  |  grep lsnr  |  grep -i $ORACLE_SID  >> /tmp/caclisten.txt
+        echo "Listener Output:"
+        cat /tmp/caclisten.txt
+        rm /tmp/caclisten.txt
+export ORACLE_HOME=`cat /etc/oratab 2>/dev/null  |  grep $ORACLE_SID  |  awk -F ':' {'print$2'}`
+        export PATH=$PATH:$ORACLE_HOME/bin
+        #export ticket_env=`/common/oracle/CAC_DB_Scripts/cac_ora_env.sh $ORACLE_SID | tail -1 | awk '{print $6}'`
+        #echo "DB Environment: "$ticket_env
+        #if [ "${ticket_env}" == "DEV" ] || [ "${ticket_env}" == "TST" ] || [ "${ticket_env}" == "TRNT" ]  ;then
+                #echo "SQL Queries Output and Current Table:"'
+                sqlplus -S / as sysdba << EOF
+                SET TERMOUT ON
+                SET HEADING ON
+                SET VERIFY OFF
+                SET LINESIZE 200
+                SET PAGESIZE 100
+
+                spool /tmp/first_lf.log
+                select open_mode, case when name='$ORACLE_SID' then 'db_matched' else 'db_not_matched' end as db_status from v\$database;
+ @/common/oracle/show_df_size.sql $ts_name
+                                                       spool off
+EOF
+                chmod 755 /tmp/first_lf.log
+check_mode=`cat /tmp/first_lf.log 2>/dev/null  |  fgrep db_matched  |  awk {'print $1$2$3$4$5$6'}`
+                dbom=${check_mode%%db_matched*}
+                if [[ "${dbom}" == "READWRITE" ]] ;then
+                        #cat /tmp/first_lf.log | tail -5
+                        echo "DB Mode:"$dbom
+dffs=`cat /tmp/first_lf.log 2>/dev/null  |  awk '{print $2}'  |  cut -d/ -f1-4  |  sort  |  uniq -d  |  fgrep $ORACLE_SID`
+                        echo "Data File System:"$dffs
+                        dffs_size=`df -h $dffs | awk '{print $5}' | tail -1 | rev | cut -c 2- | rev`
+                        echo "Space Used (%):"$dffs_size
+#dflnth=`cat /tmp/first_lf.log 2>/dev/null  |  grep -i dbf  |  awk '{print length($2)}'  |  uniq -d`
+                        #echo "DF length:"$dflnth
+                        # Enhancement: Loop through all files to check resize potential
+                        file_resized=false
+
+grep -i dbf /tmp/first_lf.log > /tmp/df_lines.tmp 2>/dev/null
+
+                                                while read -r line; do
+                                df_file=$(echo "$line" | awk '{print $2}')
+                                df_used=$(echo "$line" | awk '{print $3}' | tr -d ',')
+                                                                                     df_max=$(echo "$line" | awk '{print $4}' | tr -d ',')
+                                df_autoext=$(echo "$line" | awk '{print $6}')
+                                if [[ "$df_autoext" == "YES" && "$df_max" -lt 10240 ]]; then
+                                        echo "Resizing autoextensible file: $df_file"
+new_size=$((df_max + 2048))
+Resize_Yes_Ext "$df_file" "$new_size"
+                                        file_resized=true
+                                        en_action="Resize"
+                                        en_latfile="$df_file"
+                                        en_used="$df_used"
+                                        en_max="$df_max"
+                                        dfae="YES"
+                                        break
+                                elif [[ "$df_autoext" == "NO" && "$df_used" -lt 10240 ]]; then
+                                        echo "Resizing fixed-size file: $df_file"
+new_size=$((df_used + 2048))
+Resize_No_Ext "$df_file" "$new_size"
+                                        file_resized=true
+                                        en_action="Resize"
+                                        en_latfile="$df_file"
+                                                      en_used="$df_used"
+                                        en_max="$df_max"
+                                        dfae="NO"
+                                                       break
+                                fi
+                                                                done < /tmp/df_lines.tmp
+
+                                                                rm -f /tmp/df_lines.tmp
+
+grep -i dbf /tmp/first_lf.log 2>/dev/null  |  while read -r line; do
   if [[ "$file_resized" != true ]]; then
     df_file=$(echo "$line" | awk '{print $2}')
     df_dir=$(dirname "$df_file")
@@ -7,7 +153,7 @@ while read -r line; do
 maxdfno=$(cat /tmp/first_lf.log 2>/dev/null  |  grep -i dbf  |  awk '{print $2}'  |  sed -E 's/.*[^0-9]([0-9]+)\.dbf/\1/'  |  sort -n  |  tail -1)
     dfnewnum=$(printf '%02d' $((10#$maxdfno + 1)))
     dfnewname="${df_dir}/${df_base}${dfnewnum}.dbf"
-    echo "Adding new datafile: $dfnewname"
+    #echo "Adding new datafile: $dfnewname"
 last_autoext=$(cat /tmp/first_lf.log 2>/dev/null  |  grep -i dbf  |  tail -1  |  awk '{print $6}')
 file_exists=$(sqlplus -S /nolog <<EOF
 conn / as sysdba
@@ -32,5 +178,19 @@ fi
   en_latfile="$dfnewname"
 en_used=$(cat /tmp/first_lf.log 2>/dev/null  |  grep -i dbf  |  awk '{print $3}'  |  tail -1  |  tr -d ',')
 fi
-done < /tmp/df_lines_2.tmp
-rm -f /tmp/df_lines_2.tmp
+done
+                        en_stat=$en_used
+                        Fetch_Result $ts_name
+                        Check_Status "$dfnewname" "$en_latfile" "$en_action" "$en_stat" "$dfae"
+                else
+                        echo "[ATM_Status]Error_2: DB Mode is Not READ WRITE"
+                        exit
+                fi
+        #else
+                #echo "[ATM_Status]Error_1: The Environment value returned is Not DEV"
+                #exit
+        #fi
+else
+        echo "[ATM_Status]Error_0: Unable to log in as oracle user."
+                                                                            exit
+fi
