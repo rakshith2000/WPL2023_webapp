@@ -1,48 +1,53 @@
-# Full input text
+# Sample input text
 $text = @"
-... paste your full input here ...
+ORACLE_SID:JRMAN and Table space name:SAMPLE
+...
+Data for Logging:
+TABLESPACE_NAME                FILE_NAME                                                    Size MB Max. MB  by MB Auto
+------------------------------ ------------------------------------------------------------ ------- ------- ------ ----
+SAMPLE                         /x01/oradata/JRMAN/sample01.dbf                                4,096  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample02.dbf                                2,048  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample03.dbf                                1,024  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample04.dbf                                2,048  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample05.dbf                                2,048  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample06.dbf                                5,120  11,264      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample07.dbf                                5,120  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample08.dbf                                5,120  11,264      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample09.dbf                                5,120   5,120      0 YES
+dfnewname - /x01/oradata/JRMAN/sample09.dbf
+en_latfile - /x01/oradata/JRMAN/sample09.dbf    
+en_action - Resize
+en_stat - 5120
+dfae - YES
 "@
 
-# Split into lines
+# Step 1: Split the input lines
 $lines = $text -split "`n"
 
-# Step 1: Find where "Data for Logging:" starts
+# Step 2: Find the start of the data table
 $dataStart = ($lines | Select-String -Pattern "Data for Logging:").LineNumber
-$tableStart = $dataStart + 2  # Skip header + dashed line
+$tableStart = $dataStart + 2  # Skip header and dashes
 
-# Step 2: Extract table data dynamically
+# Step 3: Extract table rows until hitting non-table content
 $tableData = @()
-
 for ($i = $tableStart; $i -lt $lines.Count; $i++) {
     $line = $lines[$i].Trim()
-
-    # Stop if line contains variables (e.g., "dfnewname - ...")
-    if ($line -match "^\s*\w+\s*-\s*") { break }
-
-    # Skip empty lines or malformed ones
-    if ($line -eq "") { continue }
-
-    # Split line into parts - FILE_NAME can have spaces, so we capture that separately
-    # Regex captures:
-    #   1: Tablespace name
-    #   2: File name (greedy up to numbers)
-    #   3: Size MB
-    #   4: Max MB
-    #   5: Incr by MB
-    #   6: Auto
-    if ($line -match "^(SAMPLE)\s+(.+?)\s+(\d[\d,]*)\s+(\d[\d,]*)\s+(\d+)\s+(YES|NO)$") {
+    if ($line -match "^\w+.*\s+\d{1,3},*\d*\s+\d{1,3},*\d*\s+\d+\s+(YES|NO)$") {
+        $fields = $line -split '\s{2,}'  # Split on 2+ spaces
         $tableData += [PSCustomObject]@{
-            TABLESPACE_NAME = $matches[1]
-            FILE_NAME       = $matches[2].Trim()
-            SIZE_MB         = $matches[3]
-            MAX_MB          = $matches[4]
-            INCR_BY_MB      = $matches[5]
-            AUTO            = $matches[6]
+            TABLESPACE_NAME = $fields[0]
+            FILE_NAME       = $fields[1]
+            SIZE_MB         = $fields[2]
+            MAX_MB          = $fields[3]
+            INCR_BY_MB      = $fields[4]
+            AUTO            = $fields[5]
         }
+    } else {
+        break
     }
 }
 
-# Step 3: Extract remaining variables after table
+# Step 4: Extract the remaining variables
 $remainingLines = $lines[$i..($lines.Count - 1)] | Where-Object { $_ -match "-" }
 
 $variables = @{}
@@ -52,16 +57,15 @@ foreach ($line in $remainingLines) {
     }
 }
 
-# Extracted variables
+# Output
+$tableData         # Array of table row objects
 $dfnewname  = $variables["dfnewname"]
 $en_latfile = $variables["en_latfile"]
 $en_action  = $variables["en_action"]
 $en_stat    = $variables["en_stat"]
 $dfae       = $variables["dfae"]
 
-# Output
-$tableData
-
+# Display variables (optional)
 Write-Host "`ndfnewname:  $dfnewname"
 Write-Host "en_latfile: $en_latfile"
 Write-Host "en_action:  $en_action"
