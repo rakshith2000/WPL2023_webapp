@@ -1,3 +1,42 @@
+ORACLE_SID:JRMAN and Table space name:SAMPLE
+Listener Output:
+oracle 1127639 1127628 0 07:57 pts/1 00:00:00 grep pmon_JRMAN
+
+OPEN_MODE         DB_STATUS
+----------------- -----------
+READ WRITE        db_matched
+
+TABLESPACE_NAME   FILE NAME                                              Size MB  Max. MB  Incr. by MB  Auto
+----------------- ----------------------------------------------------- -------- -------- ------------ ----
+SAMPLE            /x01/oradata/JRMAN/sample01.dbf                         4,096   10,240    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample02.dbf                         2,048   10,240    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample03.dbf                         1,024   10,240    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample04.dbf                         2,048   10,240    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample05.dbf                         2,048   10,240    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample06.dbf                         5,120   11,264    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample07.dbf                         5,120   11,264    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample08.dbf                         5,120   11,264    0          YES
+
+8 rows selected.
+
+DB Mode:READWRITE
+Data File System:/x01/oradata/JRMAN
+Space Used (%):79
+Adding new datafile: /x01/oradata/JRMAN/sample09.dbf
+
+Tablespace altered.
+
+Table After:
+
+TABLESPACE_NAME   FILE NAME                                              Size MB  Max. MB  Incr. by MB  Auto
+----------------- ----------------------------------------------------- -------- -------- ------------ ----
+SAMPLE            /x01/oradata/JRMAN/sample01.dbf                         4,096   10,240    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample02.dbf                         2,048   10,240    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample03.dbf                         1,024   10,240    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample04.dbf                         2,048   10,240    0          YES
+SAMPLE            /x01/oradata/JRMAN/sample05.dbf                         2,048   10,240    0          YES
+
+Data for Logging:
 TABLESPACE_NAME                FILE_NAME                                                    Size MB Max. MB  by MB Auto
 ------------------------------ ------------------------------------------------------------ ------- ------- ------ ----
 SAMPLE                         /x01/oradata/JRMAN/sample01.dbf                                4,096  10,240      0 YES
@@ -9,3 +48,8 @@ SAMPLE                         /x01/oradata/JRMAN/sample06.dbf                  
 SAMPLE                         /x01/oradata/JRMAN/sample07.dbf                                5,120  10,240      0 YES
 SAMPLE                         /x01/oradata/JRMAN/sample08.dbf                                5,120  11,264      0 YES
 SAMPLE                         /x01/oradata/JRMAN/sample09.dbf                                5,120   5,120      0 YES
+dfnewname - /x01/oradata/JRMAN/sample09.dbf
+en_latfile - /x01/oradata/JRMAN/sample09.dbf    
+en_action - Resize
+en_stat - 5120
+dfae - YES
