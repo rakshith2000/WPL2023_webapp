@@ -1,207 +1,73 @@
-#!/bin/bash
-export login_id=`id | awk -F '(' {'print$2'} | awk -F ')' {'print$1'}`
+# Sample input text
+$text = @"
+ORACLE_SID:JRMAN and Table space name:SAMPLE
+...
+Data for Logging:
+TABLESPACE_NAME                FILE_NAME                                                    Size MB Max. MB  by MB Auto
+------------------------------ ------------------------------------------------------------ ------- ------- ------ ----
+SAMPLE                         /x01/oradata/JRMAN/sample01.dbf                                4,096  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample02.dbf                                2,048  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample03.dbf                                1,024  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample04.dbf                                2,048  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample05.dbf                                2,048  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample06.dbf                                5,120  11,264      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample07.dbf                                5,120  10,240      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample08.dbf                                5,120  11,264      0 YES
+SAMPLE                         /x01/oradata/JRMAN/sample09.dbf                                5,120   5,120      0 YES
+dfnewname - /x01/oradata/JRMAN/sample09.dbf
+en_latfile - /x01/oradata/JRMAN/sample09.dbf    
+en_action - Resize
+en_stat - 5120
+dfae - YES
+"@
 
+# Step 1: Split the input lines
+$lines = $text -split "`n"
 
+# Step 2: Find the start of the data table
+$dataStart = ($lines | Select-String -Pattern "Data for Logging:").LineNumber
+$tableStart = $dataStart + 2  # Skip header and dashes
 
-echo "Logged in as ID :- "$login_id
-
-
-
-Add_No_Ext(){
-sqlplus -S /nolog << EOF
-conn / as sysdba
-alter tablespace $1 add datafile '$2' size 10G;
-EOF
+# Step 3: Extract table rows until hitting non-table content
+$tableData = @()
+for ($i = $tableStart; $i -lt $lines.Count; $i++) {
+    $line = $lines[$i].Trim()
+    if ($line -match "^\w+.*\s+\d{1,3},*\d*\s+\d{1,3},*\d*\s+\d+\s+(YES|NO)$") {
+        $fields = $line -split '\s{2,}'  # Split on 2+ spaces
+        $tableData += [PSCustomObject]@{
+            TABLESPACE_NAME = $fields[0]
+            FILE_NAME       = $fields[1]
+            SIZE_MB         = $fields[2]
+            MAX_MB          = $fields[3]
+            INCR_BY_MB      = $fields[4]
+            AUTO            = $fields[5]
+        }
+    } else {
+        break
+    }
 }
 
+# Step 4: Extract the remaining variables
+$remainingLines = $lines[$i..($lines.Count - 1)] | Where-Object { $_ -match "-" }
 
-
-Add_Yes_Ext(){
-sqlplus -S /nolog << EOF
-conn / as sysdba
-alter tablespace $1 add datafile '$2' size 5G autoextend on maxsize 10G;
-EOF
+$variables = @{}
+foreach ($line in $remainingLines) {
+    if ($line -match "^\s*(\S+)\s*-\s*(.+)$") {
+        $variables[$matches[1]] = $matches[2].Trim()
+    }
 }
 
+# Output
+$tableData         # Array of table row objects
+$dfnewname  = $variables["dfnewname"]
+$en_latfile = $variables["en_latfile"]
+$en_action  = $variables["en_action"]
+$en_stat    = $variables["en_stat"]
+$dfae       = $variables["dfae"]
 
-
-Resize_Yes_Ext(){
-sqlplus -S /nolog << EOF
-conn / as sysdba
-alter database datafile '$1' autoextend on maxsize 10G;
-EOF
-}
-
-
-
-Resize_No_Ext(){
-sqlplus -S /nolog << EOF
-conn / as sysdba
-alter database datafile '$1' resize 10G;
-EOF
-}
-
-
-
-Fetch_Result(){
-sqlplus -S / as sysdba << EOF
-SET TERMOUT OFF
-spool /tmp/second_lf.log
-@/common/oracle/show_df_size.sql $1
-spool off
-EOF
-}
-
-
-
-Check_Status(){
-chmod 755 /tmp/second_lf.log
-echo "Table After:"
-cat /tmp/second_lf.log | tail -5
-if [[ $3 == "Add" ]] ;then
-check_status=`cat /tmp/second_lf.log | grep -i dbf |  tail -1 | awk '{print $2}'                                                                             `
-if [[ "${check_status}" == $1 ]] ;then
-echo "[ATM_Status]Success: Datafile added Successfully"
-else
-echo "[ATM_Status]Failed: Datafile not added"
-fi
-else
-if [[ $5 == "YES" ]] ;then
-check_status=`cat /tmp/second_lf.log | grep -i dbf |  tail -1 | awk '{print $4}'                                                                             `
-if [[ "${check_status}" == "10,240" ]] ;then
-echo "[ATM_Status]Success1: Datafile resized Successfully"
-else
-echo "[ATM_Status]Failed1: Datafile not resized"
-fi
-else
-check_status=`cat /tmp/second_lf.log | grep -i dbf |  tail -1 | awk '{print $3}'                                                                             `
-if [[ "${check_status}" == $4 ]] ;then
-echo "[ATM_Status]Failed1: Datafile not resized"
-else
-echo "[ATM_Status]Success1: Datafile resized Successfully"
-fi
-fi
-fi
-}
-
-
-
-if [[ "${login_id}" == "oracle" ]] ;then
-db=$1
-ts_name=$2
-export ORACLE_SID=$db
-echo "ORACLE_SID:"$ORACLE_SID "and Table space name:"$ts_name
-touch /tmp/caclisten.txt
-ps -ef | grep pmon_$ORACLE_SID | head -1 > /tmp/caclisten.txt
-ps -ef | grep lsnr | grep -i $ORACLE_SID  >> /tmp/caclisten.txt
-echo "Listener Output:"
-cat /tmp/caclisten.txt
-rm /tmp/caclisten.txt
-export ORACLE_HOME=`cat /etc/oratab | grep $ORACLE_SID | awk -F ':' {'print$2'}`
-export PATH=$PATH:$ORACLE_HOME/bin
-#conditon to validate DEV/PRD
-export ticket_env=`/common/oracle/CAC_DB_Scripts/cac_ora_env.sh $ORACLE_SID | ta                                                                             il -1 | awk '{print $6}'`
-echo "DB Environment: "$ticket_env
-#if [ "${ticket_env}" == "DEV" ] || [ "${ticket_env}" == "TST" ] || [ "${ticket_                                                                             env}" == "TRNT" ]  ;then
-#Continue as Non PROD
-echo "SQL Queries Output and Current Table:"
-sqlplus -S / as sysdba << EOF
-SET TERMOUT OFF
-spool /tmp/first_lf.log
-select open_mode, case when name='$ORACLE_SID' then 'db_matched' else 'db_not_ma                                                                             tched' end as db_status from v\$database;
-@/common/oracle/show_df_size.sql $ts_name
-spool off
-EOF
-chmod 755 /tmp/first_lf.log
-check_mode=`cat /tmp/first_lf.log | fgrep db_matched | awk {'print $1$2$3$4$5$6'                                                                             }`
-dbom=${check_mode%%db_matched*}
-if [[ "${dbom}" == "READWRITE" ]] ;then
-#Continue as Read Write only
-#echo "Table Before:"
-cat /tmp/first_lf.log | tail -5
-echo "DB Mode:"$dbom
-dffs=`cat /tmp/first_lf.log | awk '{print $2}' | cut -d/ -f1-4 | sort | uniq -d                                                                              | fgrep $ORACLE_SID`
-echo "Data File System:"$dffs
-dffs_size=`df -h $dffs | awk '{print $5}' | tail -1 | rev | cut -c 2- | rev`
-echo "Space Used (%):"$dffs_size
-dflnth=`cat /tmp/first_lf.log | grep -i dbf | awk '{print length($2)}' | uniq -d                                                                             `
-echo "DF length:"$dflnth
-maxdfno=`cat /tmp/first_lf.log | awk '{print $2}' | grep -i dbf | awk '{ print s                                                                             ubstr($0,length($0)-5,2)}' | sort | tail -1`
-#echo "Latest DF number:"$maxdfno
-dfae=`cat /tmp/first_lf.log | grep -i dbf | awk '{print $6}' | tail -1`
-echo "DF Type Auto-Extensible:"$dfae
-echo "Total space and available space on the file system:"
-df -h $dffs
-if [[ "${dffs_size}" -lt 90 ]] ;then
-#Continue as available free space
-dfnewnum=`expr $maxdfno + 1`
-#echo "DF number:"$dfnewnum
-if [[ "${dfnewnum}" -le 99 ]] ;then
-dfnewnum=$(printf '%02d' $dfnewnum)
-else
-dfnewnum=$(printf '%03d' $dfnewnum)
-fi
-echo "Latest DF number:"$maxdfno "and New DF number:"$dfnewnum
-dfname=`cat /tmp/first_lf.log | awk '{print $2}' | grep -i dbf | awk '{ print su                                                                             bstr($0,1,length($0)-6)}' | sort | uniq -d`
-echo "Existing DF name:"$dfname
-dfext=.dbf
-#echo "DF extension:"$dfext
-dfnewname=$dfname$dfnewnum$dfext
-echo "New DF name:"$dfnewname
-
-
-
-# Enhancement: Check all datafiles and resize any < 10GB
-resize_done=false
-while read -r line; do
-    df_name=$(echo $line | awk '{print $2}')
-    df_used=$(echo $line | awk '{print $3}' | sed 's/,//g')
-    df_max=$(echo $line | awk '{print $4}' | sed 's/,//g')
-    df_autoext=$(echo $line | awk '{print $6}')
-    if [[ "$df_autoext" == "YES" && "$df_max" -lt 10240 ]]; then
-        echo "Resizing autoextensible datafile: $df_name"
-        Resize_Yes_Ext $df_name
-        resize_done=true
-    elif [[ "$df_autoext" == "NO" && "$df_used" -lt 10240 ]]; then
-        echo "Resizing non-autoextensible datafile: $df_name"
-        Resize_No_Ext $df_name
-        resize_done=true
-    fi
-done < <(cat /tmp/first_lf.log | grep -i dbf)
-
-
-
-if [[ "$resize_done" == false ]]; then
-    if [[ "$dfae" == "YES" ]]; then
-        echo "Adding new autoextensible datafile: $dfnewname"
-        Add_Yes_Ext $ts_name $dfnewname
-    elif [[ "$dfae" == "NO" ]]; then
-        echo "Adding new non-autoextensible datafile: $dfnewname"
-        Add_No_Ext $ts_name $dfnewname
-    else
-        echo "[ATM_Status]Error_4: Data file Auto-Extensible Type is not YES or                                                                              NO"
-        exit
-    fi
-fi
-
-
-
-en_stat=`cat /tmp/first_lf.log | grep -i dbf | tail -1 | awk '{print $3}'`
-Fetch_Result $ts_name
-Check_Status $dfnewname $en_latfile $en_action $en_stat $dfae
-else
-echo "[ATM_Status]Error_3: DB has no free space"
-exit
-fi
-else
-echo "[ATM_Status]Error_2: DB Mode is Not READ WRITE"
-exit
-fi
-else
-echo "[ATM_Status]Error_1: The Environment value returned is Not DEV"
-exit
-fi
-else
-echo "[ATM_Status]Error_0: Unable to log in as oracle user."
-exit
-fi
+# Display variables (optional)
+Write-Host "`ndfnewname:  $dfnewname"
+Write-Host "en_latfile: $en_latfile"
+Write-Host "en_action:  $en_action"
+Write-Host "en_stat:    $en_stat"
+Write-Host "dfae:       $dfae"
